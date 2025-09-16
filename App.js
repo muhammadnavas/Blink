@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useState } from 'react';
 import { Alert, Button, FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { scheduleLocalNotification, getAllScheduledNotifications, cancelAllScheduledNotifications } from './services/notifications';
+import { cancelAllScheduledNotifications, getAllScheduledNotifications, scheduleLocalNotification, testImmediateNotification } from './services/notifications';
 
 export default function App() {
   const [reminder, setReminder] = useState('');
@@ -140,6 +140,16 @@ export default function App() {
     }
   };
 
+  // Debug: Test immediate notification
+  const testNotification = async () => {
+    try {
+      await testImmediateNotification();
+      Alert.alert('Test Sent', 'Check if you received the immediate test notification');
+    } catch (error) {
+      Alert.alert('Error', `Failed to send test notification: ${error.message}`);
+    }
+  };
+
   const renderReminder = ({ item }) => (
     <TouchableOpacity 
       style={[styles.reminderItem, { borderLeftColor: categories[item.category]?.color || '#4A90E2' }]}
@@ -201,6 +211,21 @@ export default function App() {
         onChangeText={setReminder}
       />
       <Button title="Add Reminder" onPress={addReminder} />
+
+      {/* Debug buttons */}
+      <View style={styles.debugContainer}>
+        <TouchableOpacity style={styles.debugButton} onPress={showScheduledNotifications}>
+          <Text style={styles.debugButtonText}>Show Scheduled</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.debugButton} onPress={clearAllNotifications}>
+          <Text style={styles.debugButtonText}>Clear All</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {/* Test button */}
+      <TouchableOpacity style={[styles.testButton]} onPress={testNotification}>
+        <Text style={styles.debugButtonText}>🧪 Test Immediate Notification</Text>
+      </TouchableOpacity>
 
       <FlatList
         style={styles.list}
@@ -311,6 +336,30 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 10,
     backgroundColor: 'white'
+  },
+  debugContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    marginBottom: 10
+  },
+  debugButton: {
+    backgroundColor: '#666',
+    padding: 8,
+    borderRadius: 5,
+    flex: 0.48
+  },
+  debugButtonText: {
+    color: 'white',
+    textAlign: 'center',
+    fontSize: 12
+  },
+  testButton: {
+    backgroundColor: '#007AFF',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 5,
+    marginBottom: 10
   },
   list: { 
     marginTop: 20 

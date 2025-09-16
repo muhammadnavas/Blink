@@ -63,23 +63,40 @@ export async function scheduleLocalNotification(title, body, seconds = 5) {
   try {
     console.log(`📅 Scheduling notification "${title}" for ${seconds} seconds from now`);
     
+    // First, let's try the simpler format that works in Expo Go
     const identifier = await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
-        data: { data: 'goes here' },
+        data: { timestamp: Date.now() },
       },
-      trigger: { 
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds 
-      },
+      trigger: { seconds },
     });
     
     console.log(`✅ Notification scheduled with ID: ${identifier}`);
     return identifier;
   } catch (error) {
     console.error('❌ Error scheduling notification:', error);
-    throw error;
+    // Try alternative format if first fails
+    try {
+      console.log('🔄 Trying alternative trigger format...');
+      const identifier = await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          data: { timestamp: Date.now() },
+        },
+        trigger: {
+          type: 'timeInterval',
+          seconds: seconds,
+        },
+      });
+      console.log(`✅ Alternative format worked. ID: ${identifier}`);
+      return identifier;
+    } catch (altError) {
+      console.error('❌ Alternative format also failed:', altError);
+      throw error;
+    }
   }
 }
 
@@ -129,15 +146,49 @@ export function addNotificationResponseReceivedListener(listener) {
  * Get all scheduled notifications (for debugging)
  */
 export async function getAllScheduledNotifications() {
-  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  console.log('📋 All scheduled notifications:', scheduled);
-  return scheduled;
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    console.log('📋 All scheduled notifications:', scheduled);
+    console.log('📋 Number of scheduled notifications:', scheduled.length);
+    return scheduled;
+  } catch (error) {
+    console.error('❌ Error getting scheduled notifications:', error);
+    throw error;
+  }
 }
 
 /**
  * Cancel all scheduled notifications
  */
 export async function cancelAllScheduledNotifications() {
-  await Notifications.cancelAllScheduledNotificationsAsync();
-  console.log('🗑️ All scheduled notifications cancelled');
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    console.log('🗑️ All scheduled notifications cancelled');
+    return true;
+  } catch (error) {
+    console.error('❌ Error cancelling notifications:', error);
+    throw error;
+  }
+}
+
+/**
+ * Test immediate notification (for debugging)
+ */
+export async function testImmediateNotification() {
+  try {
+    console.log('🧪 Testing immediate notification...');
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Test Notification',
+        body: 'This is a test notification sent immediately',
+        data: { test: true },
+      },
+      trigger: null, // Immediate notification
+    });
+    console.log(`✅ Immediate notification sent with ID: ${identifier}`);
+    return identifier;
+  } catch (error) {
+    console.error('❌ Error sending immediate notification:', error);
+    throw error;
+  }
 }

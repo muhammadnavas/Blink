@@ -14,11 +14,11 @@ export default function App() {
 
   const categories = {
     'Personal': { color: '#4A90E2', emoji: '👤' },
-    'Work': { color: '#F5A623', emoji: '💼' },
-    'Health': { color: '#7ED321', emoji: '🏥' },
-    'Shopping': { color: '#D0021B', emoji: '🛒' },
-    'Exercise': { color: '#9013FE', emoji: '🏃' },
-    'Study': { color: '#50E3C2', emoji: '📚' }
+    'Work': { color: '#4A90E2', emoji: '💼' },
+    'Health': { color: '#4A90E2', emoji: '🏥' },
+    'Shopping': { color: '#4A90E2', emoji: '🛒' },
+    'Exercise': { color: '#4A90E2', emoji: '🏃' },
+    'Study': { color: '#4A90E2', emoji: '📚' }
   };
 
   const timeOptions = [

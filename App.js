@@ -1,25 +1,26 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useState } from 'react';
-import { 
-  Alert, 
-  FlatList, 
-  Modal, 
-  ScrollView, 
-  StyleSheet, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  View,
-  Switch,
+import {
+  Alert,
   Dimensions,
+  FlatList,
+  Modal,
+  RefreshControl,
+  ScrollView,
   StatusBar,
-  RefreshControl
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import {
   addNotificationResponseReceivedListener,
   cancelAllReminders,
   cancelAllScheduledNotifications,
+  cancelReminder,
   createPersistentNotification,
   getAllActiveReminders,
   getAllScheduledNotifications,
@@ -30,9 +31,8 @@ import {
   scheduleDailyReminder,
   scheduleLocalNotification,
   scheduleWeeklyReminder,
-  testCalendarNotification,
-  testImmediateNotification,
-  cancelReminder
+  testAndroidNotification,
+  testImmediateNotification
 } from './services/notifications';
 
 const { width } = Dimensions.get('window');
@@ -677,6 +677,9 @@ export default function App() {
               <Text style={styles.statLabel}>Snoozed</Text>
             </View>
           </View>
+          <Text style={styles.compatibilityNote}>
+            🤖 Android Compatible: Daily/Weekly reminders use one-time notifications for compatibility
+          </Text>
         </View>
       )}
 
@@ -710,8 +713,8 @@ export default function App() {
         <TouchableOpacity style={styles.testButton} onPress={testImmediateNotification}>
           <Text style={styles.debugButtonText}>🧪 Test Now</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.testButton} onPress={testCalendarNotification}>
-          <Text style={styles.debugButtonText}>📅 Test 1min</Text>
+        <TouchableOpacity style={styles.testButton} onPress={() => testAndroidNotification(1)}>
+          <Text style={styles.debugButtonText}>🤖 Android 1min</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -1558,6 +1561,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3
+  },
+  compatibilityNote: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic'
   },
   statsTitle: {
     fontSize: 18,

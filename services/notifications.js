@@ -2,6 +2,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+/*
+ * ANDROID COMPATIBILITY NOTES:
+ * - Calendar triggers (type: 'calendar') are NOT supported on Android
+ * - Use timeInterval triggers (seconds) instead for cross-platform compatibility
+ * - For true repeating notifications, consider background tasks or server-side scheduling
+ * - Daily/weekly "repeating" functions now create one-time notifications for first occurrence
+ */
+
 // Storage keys for notification tracking
 const STORAGE_KEYS = {
   SCHEDULED_REMINDERS: 'scheduled_reminders',
@@ -278,7 +286,9 @@ export async function testCalendarNotification(delayMinutes = 1) {
     
     const now = new Date();
     const targetTime = new Date(now.getTime() + delayMinutes * 60000);
+    const delaySeconds = delayMinutes * 60;
     
+    // Use timeInterval trigger for compatibility with all platforms
     const identifier = await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Calendar Test',
@@ -287,10 +297,7 @@ export async function testCalendarNotification(delayMinutes = 1) {
         categoryIdentifier: 'reminder',
       },
       trigger: {
-        type: 'calendar',
-        hour: targetTime.getHours(),
-        minute: targetTime.getMinutes(),
-        repeats: false,
+        seconds: delaySeconds,
       },
     });
     
@@ -326,14 +333,13 @@ export async function scheduleDailyReminder(title, body, hour, minute, reminderK
       targetTime.setDate(targetTime.getDate() + 1);
     }
     
-    // Use calendar trigger with specific date for first occurrence, then repeat
+    const delaySeconds = Math.floor((targetTime.getTime() - now.getTime()) / 1000);
+    
+    // Use timeInterval trigger for cross-platform compatibility
+    // Note: This creates a one-time notification for the first occurrence
+    // For true daily repeating, you'd need to reschedule after each trigger
     const trigger = {
-      type: 'calendar',
-      repeats: true,
-      hour,
-      minute,
-      // Ensure we don't trigger immediately
-      date: targetTime,
+      seconds: delaySeconds,
     };
 
     const identifier = await Notifications.scheduleNotificationAsync({
@@ -346,7 +352,8 @@ export async function scheduleDailyReminder(title, body, hour, minute, reminderK
           hour,
           minute,
           originalTime: Date.now(),
-          nextTrigger: targetTime.getTime()
+          nextTrigger: targetTime.getTime(),
+          shouldRepeat: true
         },
         categoryIdentifier: 'reminder',
       },
@@ -367,6 +374,7 @@ export async function scheduleDailyReminder(title, body, hour, minute, reminderK
     });
 
     console.log(`✅ Daily reminder scheduled with ID: ${identifier}, next trigger: ${targetTime.toLocaleString()}`);
+    console.log(`⚠️ Note: This is a one-time notification. For true daily repeating, consider using background tasks.`);
     return identifier;
   } catch (error) {
     console.error('❌ Error scheduling daily reminder:', error);
@@ -405,14 +413,12 @@ export async function scheduleWeeklyReminder(title, body, weekday, hour, minute,
     
     targetTime.setDate(targetTime.getDate() + daysUntilTarget);
     
+    const delaySeconds = Math.floor((targetTime.getTime() - now.getTime()) / 1000);
+    
+    // Use timeInterval trigger for cross-platform compatibility
+    // Note: This creates a one-time notification for the first occurrence
     const trigger = {
-      type: 'calendar',
-      repeats: true,
-      weekday,
-      hour,
-      minute,
-      // Set initial date to prevent immediate trigger
-      date: targetTime,
+      seconds: delaySeconds,
     };
 
     const identifier = await Notifications.scheduleNotificationAsync({
@@ -426,7 +432,8 @@ export async function scheduleWeeklyReminder(title, body, weekday, hour, minute,
           hour,
           minute,
           originalTime: Date.now(),
-          nextTrigger: targetTime.getTime()
+          nextTrigger: targetTime.getTime(),
+          shouldRepeat: true
         },
         categoryIdentifier: 'reminder',
       },
@@ -447,6 +454,7 @@ export async function scheduleWeeklyReminder(title, body, weekday, hour, minute,
     });
 
     console.log(`✅ Weekly reminder scheduled with ID: ${identifier}, next trigger: ${targetTime.toLocaleString()}`);
+    console.log(`⚠️ Note: This is a one-time notification. For true weekly repeating, consider using background tasks.`);
     return identifier;
   } catch (error) {
     console.error('❌ Error scheduling weekly reminder:', error);
@@ -469,7 +477,6 @@ export async function scheduleCustomIntervalReminder(title, body, intervalSecond
     const safeInterval = Math.max(intervalSeconds, 60);
     
     const trigger = {
-      type: 'timeInterval',
       seconds: safeInterval,
       repeats: true,
     };
@@ -507,6 +514,93 @@ export async function scheduleCustomIntervalReminder(title, body, intervalSecond
     return identifier;
   } catch (error) {
     console.error('❌ Error scheduling custom interval reminder:', error);
+    throw error;
+  }
+}
+
+/**
+ * Schedule a repeating daily reminder using interval triggers (Android compatible)
+ * @param {string} title - Notification title
+ * @param {string} body - Notification body
+ * @param {number} hour - Hour (0-23)
+ * @param {number} minute - Minute (0-59)
+ * @param {string} reminderKey - Unique key for this reminder
+ */
+export async function scheduleRepeatingDailyReminder(title, body, hour, minute, reminderKey) {
+  try {
+    console.log(`📅 Scheduling repeating daily reminder "${title}" at ${hour}:${minute}`);
+    
+    // Calculate seconds until the target time today
+    const now = new Date();
+    const targetTime = new Date();
+    targetTime.setHours(hour, minute, 0, 0);
+    
+    // If the time has already passed today, schedule for tomorrow
+    if (targetTime <= now) {
+      targetTime.setDate(targetTime.getDate() + 1);
+    }
+    
+    const delaySeconds = Math.floor((targetTime.getTime() - now.getTime()) / 1000);
+    const oneDayInSeconds = 24 * 60 * 60;
+    
+    // Schedule the first notification
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: { 
+          reminderKey,
+          type: 'daily-repeating',
+          hour,
+          minute,
+          originalTime: Date.now(),
+          nextTrigger: targetTime.getTime()
+        },
+        categoryIdentifier: 'reminder',
+      },
+      trigger: {
+        seconds: delaySeconds,
+      },
+    });
+
+    // Schedule a repeating notification that starts after the first one
+    const repeatingIdentifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: { 
+          reminderKey: `${reminderKey}_repeating`,
+          type: 'daily-repeating',
+          hour,
+          minute,
+          originalTime: Date.now(),
+          isRepeating: true
+        },
+        categoryIdentifier: 'reminder',
+      },
+      trigger: {
+        seconds: delaySeconds + oneDayInSeconds,
+        repeats: true,
+      },
+    });
+
+    await storeReminderInfo(reminderKey, {
+      identifier,
+      repeatingIdentifier,
+      type: 'daily-repeating',
+      title,
+      body,
+      hour,
+      minute,
+      active: true,
+      createdAt: Date.now(),
+      nextTrigger: targetTime.getTime(),
+    });
+
+    console.log(`✅ Repeating daily reminder scheduled with IDs: ${identifier} (first), ${repeatingIdentifier} (repeating)`);
+    return identifier;
+  } catch (error) {
+    console.error('❌ Error scheduling repeating daily reminder:', error);
     throw error;
   }
 }
@@ -809,9 +903,18 @@ export async function getAllActiveReminders() {
 async function cancelNotificationByKey(notificationKey) {
   try {
     const reminderInfo = await getReminderInfo(notificationKey);
-    if (reminderInfo && reminderInfo.identifier) {
-      await Notifications.cancelScheduledNotificationAsync(reminderInfo.identifier);
-      console.log(`🗑️ Cancelled notification with identifier: ${reminderInfo.identifier}`);
+    if (reminderInfo) {
+      // Cancel the main identifier
+      if (reminderInfo.identifier) {
+        await Notifications.cancelScheduledNotificationAsync(reminderInfo.identifier);
+        console.log(`🗑️ Cancelled notification with identifier: ${reminderInfo.identifier}`);
+      }
+      
+      // Cancel the repeating identifier if it exists
+      if (reminderInfo.repeatingIdentifier) {
+        await Notifications.cancelScheduledNotificationAsync(reminderInfo.repeatingIdentifier);
+        console.log(`🗑️ Cancelled repeating notification with identifier: ${reminderInfo.repeatingIdentifier}`);
+      }
       
       // Mark as inactive in storage
       const reminders = await getStoredReminders();
@@ -912,6 +1015,36 @@ export async function getNotificationStats() {
   } catch (error) {
     console.error('❌ Error getting notification stats:', error);
     return null;
+  }
+}
+
+/**
+ * Test Android-compatible notification (using timeInterval trigger)
+ */
+export async function testAndroidNotification(delayMinutes = 1) {
+  try {
+    console.log(`🤖 Testing Android-compatible notification ${delayMinutes} minute(s) from now...`);
+    
+    const delaySeconds = delayMinutes * 60;
+    const targetTime = new Date(Date.now() + delayMinutes * 60000);
+    
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Android Test ✅',
+        body: `This notification was scheduled for ${targetTime.toLocaleTimeString()} using timeInterval trigger`,
+        data: { test: true, scheduledFor: targetTime.getTime(), platform: Platform.OS },
+        categoryIdentifier: 'reminder',
+      },
+      trigger: {
+        seconds: delaySeconds,
+      },
+    });
+    
+    console.log(`✅ Android-compatible test notification scheduled with ID: ${identifier} for ${targetTime.toLocaleString()}`);
+    return identifier;
+  } catch (error) {
+    console.error('❌ Error sending Android test notification:', error);
+    throw error;
   }
 }
 

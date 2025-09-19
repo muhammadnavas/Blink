@@ -1,51 +1,100 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useState } from 'react';
-import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { 
+  Alert, 
+  FlatList, 
+  Modal, 
+  ScrollView, 
+  StyleSheet, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  View,
+  Switch,
+  Dimensions,
+  StatusBar,
+  RefreshControl
+} from 'react-native';
 import {
-    addNotificationResponseReceivedListener,
-    cancelAllReminders,
-    cancelAllScheduledNotifications,
-    createPersistentNotification,
-    getAllActiveReminders,
-    getAllScheduledNotifications,
-    getNotificationStats,
-    handleNotificationResponse,
-    initializeNotificationSystem,
-    scheduleCustomIntervalReminder,
-    scheduleDailyReminder,
-    scheduleLocalNotification,
-    scheduleWeeklyReminder,
-    testCalendarNotification,
-    testImmediateNotification
+  addNotificationResponseReceivedListener,
+  cancelAllReminders,
+  cancelAllScheduledNotifications,
+  createPersistentNotification,
+  getAllActiveReminders,
+  getAllScheduledNotifications,
+  getNotificationStats,
+  handleNotificationResponse,
+  initializeNotificationSystem,
+  scheduleCustomIntervalReminder,
+  scheduleDailyReminder,
+  scheduleLocalNotification,
+  scheduleWeeklyReminder,
+  testCalendarNotification,
+  testImmediateNotification,
+  cancelReminder
 } from './services/notifications';
+
+const { width } = Dimensions.get('window');
 
 export default function App() {
   const [reminder, setReminder] = useState('');
   const [reminders, setReminders] = useState([]);
+  const [completedReminders, setCompletedReminders] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('Personal');
-  const [selectedTime, setSelectedTime] = useState(5); // seconds
+  const [selectedTime, setSelectedTime] = useState(5);
+  const [selectedPriority, setSelectedPriority] = useState('medium');
+  const [reminderNote, setReminderNote] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTab, setSelectedTab] = useState('active'); // 'active', 'completed', 'stats'
+  
+  // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showTimeModal, setShowTimeModal] = useState(false);
-  
-  // Enhanced notification features
-  const [reminderType, setReminderType] = useState('one-time'); // 'one-time', 'daily', 'weekly', 'interval'
+  const [showPriorityModal, setShowPriorityModal] = useState(false);
   const [showReminderTypeModal, setShowReminderTypeModal] = useState(false);
-  const [dailyTime, setDailyTime] = useState({ hour: 9, minute: 0 }); // For daily reminders
-  const [weeklyTime, setWeeklyTime] = useState({ weekday: 2, hour: 9, minute: 0 }); // Monday at 9:00
-  const [intervalMinutes, setIntervalMinutes] = useState(60); // For custom intervals
   const [showDailyTimeModal, setShowDailyTimeModal] = useState(false);
   const [showWeeklyTimeModal, setShowWeeklyTimeModal] = useState(false);
   const [showIntervalModal, setShowIntervalModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingReminder, setEditingReminder] = useState(null);
+  
+  // Enhanced reminder features
+  const [reminderType, setReminderType] = useState('one-time');
+  const [dailyTime, setDailyTime] = useState({ hour: 9, minute: 0 });
+  const [weeklyTime, setWeeklyTime] = useState({ weekday: 2, hour: 9, minute: 0 });
+  const [intervalMinutes, setIntervalMinutes] = useState(60);
   const [notificationStats, setNotificationStats] = useState(null);
+  const [settings, setSettings] = useState({
+    soundEnabled: true,
+    vibrationEnabled: true,
+    darkMode: false,
+    autoCleanup: true,
+    showCompletedCount: true
+  });
 
+  // Enhanced categories with more options
   const categories = {
-    'Personal': { color: '#4A90E2', emoji: '👤' },
-    'Work': { color: '#4A90E2', emoji: '💼' },
-    'Health': { color: '#4A90E2', emoji: '🏥' },
-    'Shopping': { color: '#4A90E2', emoji: '🛒' },
-    'Exercise': { color: '#4A90E2', emoji: '🏃' },
-    'Study': { color: '#4A90E2', emoji: '📚' }
+    'Personal': { color: '#4A90E2', emoji: '👤', description: 'Personal tasks and reminders' },
+    'Work': { color: '#50C878', emoji: '💼', description: 'Work-related tasks' },
+    'Health': { color: '#FF6B6B', emoji: '🏥', description: 'Health and medical reminders' },
+    'Shopping': { color: '#FFD93D', emoji: '🛒', description: 'Shopping lists and errands' },
+    'Exercise': { color: '#6BCF7F', emoji: '🏃', description: 'Fitness and exercise' },
+    'Study': { color: '#9B59B6', emoji: '📚', description: 'Education and learning' },
+    'Social': { color: '#FF9500', emoji: '👥', description: 'Social events and meetings' },
+    'Finance': { color: '#34C759', emoji: '💰', description: 'Bills and financial tasks' },
+    'Travel': { color: '#007AFF', emoji: '✈️', description: 'Travel and vacation' },
+    'Family': { color: '#FF69B4', emoji: '👨‍👩‍👧‍👦', description: 'Family activities' }
+  };
+
+  const priorities = {
+    'low': { label: 'Low', color: '#95A5A6', emoji: '🔵' },
+    'medium': { label: 'Medium', color: '#F39C12', emoji: '🟡' },
+    'high': { label: 'High', color: '#E74C3C', emoji: '🔴' },
+    'urgent': { label: 'Urgent', color: '#8E44AD', emoji: '🟣' }
   };
 
   const reminderTypes = {
@@ -56,24 +105,17 @@ export default function App() {
   };
 
   const weekdays = [
-    { value: 1, label: 'Sunday' },
-    { value: 2, label: 'Monday' },
-    { value: 3, label: 'Tuesday' },
-    { value: 4, label: 'Wednesday' },
-    { value: 5, label: 'Thursday' },
-    { value: 6, label: 'Friday' },
+    { value: 1, label: 'Sunday' }, { value: 2, label: 'Monday' },
+    { value: 3, label: 'Tuesday' }, { value: 4, label: 'Wednesday' },
+    { value: 5, label: 'Thursday' }, { value: 6, label: 'Friday' },
     { value: 7, label: 'Saturday' }
   ];
 
   const intervalOptions = [
-    { value: 5, label: '5 minutes' },
-    { value: 15, label: '15 minutes' },
-    { value: 30, label: '30 minutes' },
-    { value: 60, label: '1 hour' },
-    { value: 120, label: '2 hours' },
-    { value: 240, label: '4 hours' },
-    { value: 480, label: '8 hours' },
-    { value: 720, label: '12 hours' }
+    { value: 5, label: '5 minutes' }, { value: 15, label: '15 minutes' },
+    { value: 30, label: '30 minutes' }, { value: 60, label: '1 hour' },
+    { value: 120, label: '2 hours' }, { value: 240, label: '4 hours' },
+    { value: 480, label: '8 hours' }, { value: 720, label: '12 hours' }
   ];
 
   const timeOptions = [
@@ -91,25 +133,43 @@ export default function App() {
     initializeApp();
   }, []);
 
-  // Initialize the app with notification system
   const initializeApp = async () => {
+    setIsLoading(true);
     await loadReminders();
+    await loadCompletedReminders();
+    await loadSettings();
     await requestNotificationPermissions();
     await initializeNotificationSystem();
     await updateNotificationStats();
     
-    // Set up notification response listener
     const subscription = addNotificationResponseReceivedListener(handleNotificationResponse);
+    setIsLoading(false);
     
-    // Return cleanup function
     return () => {
-      if (subscription) {
-        subscription.remove();
-      }
+      if (subscription) subscription.remove();
     };
   };
 
-  // Request notification permissions
+  const loadSettings = async () => {
+    try {
+      const savedSettings = await AsyncStorage.getItem('app_settings');
+      if (savedSettings) {
+        setSettings({ ...settings, ...JSON.parse(savedSettings) });
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  };
+
+  const saveSettings = async (newSettings) => {
+    try {
+      setSettings(newSettings);
+      await AsyncStorage.setItem('app_settings', JSON.stringify(newSettings));
+    } catch (error) {
+      console.error('Error saving settings:', error);
+    }
+  };
+
   const requestNotificationPermissions = async () => {
     const { status } = await Notifications.requestPermissionsAsync();
     if (status !== 'granted') {
@@ -117,31 +177,61 @@ export default function App() {
     }
   };
 
-  // Load reminders from storage
   const loadReminders = async () => {
-    const data = await AsyncStorage.getItem('reminders');
-    if (data) setReminders(JSON.parse(data));
+    try {
+      const data = await AsyncStorage.getItem('reminders');
+      if (data) setReminders(JSON.parse(data));
+    } catch (error) {
+      console.error('Error loading reminders:', error);
+    }
   };
 
-  // Save reminders to storage
+  const loadCompletedReminders = async () => {
+    try {
+      const data = await AsyncStorage.getItem('completed_reminders');
+      if (data) setCompletedReminders(JSON.parse(data));
+    } catch (error) {
+      console.error('Error loading completed reminders:', error);
+    }
+  };
+
   const saveReminders = async (newReminders) => {
-    setReminders(newReminders);
-    await AsyncStorage.setItem('reminders', JSON.stringify(newReminders));
+    try {
+      setReminders(newReminders);
+      await AsyncStorage.setItem('reminders', JSON.stringify(newReminders));
+    } catch (error) {
+      console.error('Error saving reminders:', error);
+    }
   };
 
-  // Add a reminder
+  const saveCompletedReminders = async (newCompleted) => {
+    try {
+      setCompletedReminders(newCompleted);
+      await AsyncStorage.setItem('completed_reminders', JSON.stringify(newCompleted));
+    } catch (error) {
+      console.error('Error saving completed reminders:', error);
+    }
+  };
+
   const addReminder = async () => {
-    if (reminder.trim() === '') return;
+    if (reminder.trim() === '') {
+      Alert.alert('Error', 'Please enter a reminder text');
+      return;
+    }
+    
+    setIsLoading(true);
     
     const reminderKey = `reminder_${Date.now()}`;
     const newReminder = { 
       id: Date.now().toString(), 
       text: reminder,
+      note: reminderNote,
       category: selectedCategory,
+      priority: selectedPriority,
       type: reminderType,
+      completed: false,
       createdAt: new Date().toISOString(),
       reminderKey,
-      // Store different timing based on type
       ...(reminderType === 'one-time' && { time: selectedTime }),
       ...(reminderType === 'daily' && { dailyTime }),
       ...(reminderType === 'weekly' && { weeklyTime }),
@@ -151,108 +241,65 @@ export default function App() {
     const newReminders = [...reminders, newReminder];
     await saveReminders(newReminders);
     
-    // Schedule the appropriate notification type
     await scheduleReminderNotification(newReminder);
+    
+    // Reset form
     setReminder('');
+    setReminderNote('');
+    setSelectedPriority('medium');
+    setReminderType('one-time');
+    
+    setIsLoading(false);
   };
 
-  // Schedule notification based on reminder type
   const scheduleReminderNotification = async (reminderData) => {
     try {
       let notificationId;
-      const { text, reminderKey, type } = reminderData;
+      const { text, reminderKey, type, priority } = reminderData;
+      const priorityEmoji = priorities[priority].emoji;
       
       switch (type) {
         case 'one-time':
-          console.log(`🔔 Scheduling one-time notification with time: ${reminderData.time} seconds`);
-          notificationId = await scheduleLocalNotification('Blink Reminder', text, reminderData.time);
-          const timeLabel = timeOptions.find(t => t.value === reminderData.time)?.label || `${reminderData.time} seconds`;
-          const notificationTime = new Date(Date.now() + reminderData.time * 1000);
-          const timeString = notificationTime.toLocaleTimeString();
-          Alert.alert(
-            'Reminder Set!', 
-            `One-time notification will appear in ${timeLabel} at ${timeString}.\n\nNotification ID: ${notificationId}`
+          notificationId = await scheduleLocalNotification(
+            `${priorityEmoji} Reminder`, 
+            text, 
+            reminderData.time
           );
           break;
           
         case 'daily':
-          console.log(`🔔 Scheduling daily reminder at ${reminderData.dailyTime.hour}:${reminderData.dailyTime.minute}`);
           notificationId = await scheduleDailyReminder(
-            'Daily Reminder',
+            `${priorityEmoji} Daily Reminder`,
             text,
             reminderData.dailyTime.hour,
             reminderData.dailyTime.minute,
             reminderKey
           );
-          
-          // Calculate next trigger time for display
-          const now = new Date();
-          const nextDaily = new Date();
-          nextDaily.setHours(reminderData.dailyTime.hour, reminderData.dailyTime.minute, 0, 0);
-          if (nextDaily <= now) {
-            nextDaily.setDate(nextDaily.getDate() + 1);
-          }
-          
-          Alert.alert(
-            'Daily Reminder Set!',
-            `Notification will appear daily at ${String(reminderData.dailyTime.hour).padStart(2, '0')}:${String(reminderData.dailyTime.minute).padStart(2, '0')}\n\nNext notification: ${nextDaily.toLocaleString()}\n\nNotification ID: ${notificationId}`
-          );
           break;
           
         case 'weekly':
-          console.log(`🔔 Scheduling weekly reminder on ${reminderData.weeklyTime.weekday} at ${reminderData.weeklyTime.hour}:${reminderData.weeklyTime.minute}`);
           notificationId = await scheduleWeeklyReminder(
-            'Weekly Reminder',
+            `${priorityEmoji} Weekly Reminder`,
             text,
             reminderData.weeklyTime.weekday,
             reminderData.weeklyTime.hour,
             reminderData.weeklyTime.minute,
             reminderKey
           );
-          
-          // Calculate next trigger time for display
-          const weekdayName = weekdays.find(w => w.value === reminderData.weeklyTime.weekday)?.label;
-          const currentTime = new Date();
-          const nextWeekly = new Date();
-          nextWeekly.setHours(reminderData.weeklyTime.hour, reminderData.weeklyTime.minute, 0, 0);
-          
-          const currentWeekday = currentTime.getDay() + 1;
-          let daysUntilTarget = reminderData.weeklyTime.weekday - currentWeekday;
-          if (daysUntilTarget < 0 || (daysUntilTarget === 0 && nextWeekly <= currentTime)) {
-            daysUntilTarget += 7;
-          }
-          nextWeekly.setDate(nextWeekly.getDate() + daysUntilTarget);
-          
-          Alert.alert(
-            'Weekly Reminder Set!',
-            `Notification will appear every ${weekdayName} at ${String(reminderData.weeklyTime.hour).padStart(2, '0')}:${String(reminderData.weeklyTime.minute).padStart(2, '0')}\n\nNext notification: ${nextWeekly.toLocaleString()}\n\nNotification ID: ${notificationId}`
-          );
           break;
           
         case 'interval':
-          console.log(`🔔 Scheduling interval reminder every ${reminderData.intervalMinutes} minutes`);
           notificationId = await scheduleCustomIntervalReminder(
-            'Interval Reminder',
+            `${priorityEmoji} Interval Reminder`,
             text,
-            reminderData.intervalMinutes * 60, // Convert to seconds
+            reminderData.intervalMinutes * 60,
             reminderKey
           );
-          
-          const intervalLabel = intervalOptions.find(i => i.value === reminderData.intervalMinutes)?.label || `${reminderData.intervalMinutes} minutes`;
-          const nextInterval = new Date(Date.now() + (Math.max(reminderData.intervalMinutes * 60, 60) * 1000));
-          
-          Alert.alert(
-            'Interval Reminder Set!',
-            `Notification will repeat every ${intervalLabel}\n\nNext notification: ${nextInterval.toLocaleString()}\n\nNotification ID: ${notificationId}`
-          );
           break;
-          
-        default:
-          throw new Error(`Unknown reminder type: ${type}`);
       }
       
-      // Update notification stats
-      updateNotificationStats();
+      await updateNotificationStats();
+      Alert.alert('Reminder Set!', `Notification scheduled successfully\nID: ${notificationId}`);
       
     } catch (error) {
       console.error('Error scheduling notification:', error);
@@ -260,47 +307,40 @@ export default function App() {
     }
   };
 
-  // Create persistent notification
-  const createPersistentReminder = async () => {
-    if (reminder.trim() === '') {
-      Alert.alert('Error', 'Please enter a reminder text first');
-      return;
+  const completeReminder = async (reminderId) => {
+    const reminder = reminders.find(r => r.id === reminderId);
+    if (!reminder) return;
+
+    // Cancel the notification if it's a recurring reminder
+    if (reminder.reminderKey) {
+      try {
+        await cancelReminder(reminder.reminderKey);
+      } catch (error) {
+        console.error('Error canceling reminder:', error);
+      }
     }
+
+    // Move to completed
+    const completedReminder = {
+      ...reminder,
+      completed: true,
+      completedAt: new Date().toISOString()
+    };
     
-    try {
-      const persistentKey = `persistent_${Date.now()}`;
-      const notificationId = await createPersistentNotification(
-        'Persistent Reminder',
-        reminder,
-        persistentKey,
-        true // ongoing = true
-      );
-      
-      Alert.alert(
-        'Persistent Reminder Created!',
-        `Sticky notification created and will remain visible until dismissed.\n\nNotification ID: ${notificationId}`
-      );
-      
-      setReminder('');
-      updateNotificationStats();
-    } catch (error) {
-      console.error('Error creating persistent notification:', error);
-      Alert.alert('Error', `Failed to create persistent notification: ${error.message}`);
+    const newReminders = reminders.filter(r => r.id !== reminderId);
+    const newCompleted = [completedReminder, ...completedReminders];
+    
+    await saveReminders(newReminders);
+    await saveCompletedReminders(newCompleted);
+    await updateNotificationStats();
+    
+    // Clean up old completed reminders if auto-cleanup is enabled
+    if (settings.autoCleanup) {
+      await cleanupOldCompletedReminders();
     }
   };
 
-  // Update notification statistics
-  const updateNotificationStats = async () => {
-    try {
-      const stats = await getNotificationStats();
-      setNotificationStats(stats);
-    } catch (error) {
-      console.error('Error updating notification stats:', error);
-    }
-  };
-
-  // Delete a reminder
-  const deleteReminder = async (id) => {
+  const deleteReminder = async (id, isCompleted = false) => {
     Alert.alert(
       'Delete Reminder',
       'Are you sure you want to delete this reminder?',
@@ -310,15 +350,154 @@ export default function App() {
           text: 'Delete', 
           style: 'destructive',
           onPress: async () => {
-            const newReminders = reminders.filter(item => item.id !== id);
-            await saveReminders(newReminders);
+            if (isCompleted) {
+              const newCompleted = completedReminders.filter(item => item.id !== id);
+              await saveCompletedReminders(newCompleted);
+            } else {
+              const reminder = reminders.find(r => r.id === id);
+              if (reminder && reminder.reminderKey) {
+                try {
+                  await cancelReminder(reminder.reminderKey);
+                } catch (error) {
+                  console.error('Error canceling reminder:', error);
+                }
+              }
+              const newReminders = reminders.filter(item => item.id !== id);
+              await saveReminders(newReminders);
+            }
+            await updateNotificationStats();
           }
         }
       ]
     );
   };
 
-  // Debug: Show all scheduled notifications with enhanced stats
+  const editReminder = (reminder) => {
+    setEditingReminder(reminder);
+    setReminder(reminder.text);
+    setReminderNote(reminder.note || '');
+    setSelectedCategory(reminder.category);
+    setSelectedPriority(reminder.priority);
+    setReminderType(reminder.type);
+    if (reminder.dailyTime) setDailyTime(reminder.dailyTime);
+    if (reminder.weeklyTime) setWeeklyTime(reminder.weeklyTime);
+    if (reminder.intervalMinutes) setIntervalMinutes(reminder.intervalMinutes);
+    if (reminder.time) setSelectedTime(reminder.time);
+    setShowEditModal(true);
+  };
+
+  const updateReminder = async () => {
+    if (!editingReminder || reminder.trim() === '') return;
+
+    // Cancel old notification
+    if (editingReminder.reminderKey) {
+      try {
+        await cancelReminder(editingReminder.reminderKey);
+      } catch (error) {
+        console.error('Error canceling old reminder:', error);
+      }
+    }
+
+    const updatedReminder = {
+      ...editingReminder,
+      text: reminder,
+      note: reminderNote,
+      category: selectedCategory,
+      priority: selectedPriority,
+      type: reminderType,
+      updatedAt: new Date().toISOString(),
+      ...(reminderType === 'one-time' && { time: selectedTime }),
+      ...(reminderType === 'daily' && { dailyTime }),
+      ...(reminderType === 'weekly' && { weeklyTime }),
+      ...(reminderType === 'interval' && { intervalMinutes })
+    };
+
+    const newReminders = reminders.map(r => 
+      r.id === editingReminder.id ? updatedReminder : r
+    );
+    
+    await saveReminders(newReminders);
+    await scheduleReminderNotification(updatedReminder);
+    
+    setShowEditModal(false);
+    setEditingReminder(null);
+    setReminder('');
+    setReminderNote('');
+  };
+
+  const cleanupOldCompletedReminders = async () => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const filteredCompleted = completedReminders.filter(reminder => {
+      const completedDate = new Date(reminder.completedAt);
+      return completedDate > thirtyDaysAgo;
+    });
+    
+    if (filteredCompleted.length !== completedReminders.length) {
+      await saveCompletedReminders(filteredCompleted);
+    }
+  };
+
+  const updateNotificationStats = async () => {
+    try {
+      const stats = await getNotificationStats();
+      setNotificationStats(stats);
+    } catch (error) {
+      console.error('Error updating notification stats:', error);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadReminders();
+    await loadCompletedReminders();
+    await updateNotificationStats();
+    setRefreshing(false);
+  };
+
+  // Filter reminders based on search query
+  const getFilteredReminders = () => {
+    if (!searchQuery) return reminders;
+    return reminders.filter(reminder =>
+      reminder.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      reminder.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (reminder.note && reminder.note.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  };
+
+  const getFilteredCompletedReminders = () => {
+    if (!searchQuery) return completedReminders;
+    return completedReminders.filter(reminder =>
+      reminder.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      reminder.category.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  };
+
+  const createPersistentReminder = async () => {
+    if (reminder.trim() === '') {
+      Alert.alert('Error', 'Please enter a reminder text first');
+      return;
+    }
+    
+    try {
+      const persistentKey = `persistent_${Date.now()}`;
+      const priorityEmoji = priorities[selectedPriority].emoji;
+      const notificationId = await createPersistentNotification(
+        `${priorityEmoji} Persistent Reminder`,
+        reminder,
+        persistentKey,
+        true
+      );
+      
+      Alert.alert('Persistent Reminder Created!', `ID: ${notificationId}`);
+      setReminder('');
+      updateNotificationStats();
+    } catch (error) {
+      Alert.alert('Error', `Failed to create persistent notification: ${error.message}`);
+    }
+  };
+
   const showScheduledNotifications = async () => {
     try {
       const scheduled = await getAllScheduledNotifications();
@@ -328,69 +507,74 @@ export default function App() {
       const statsText = stats ? 
         `📊 Statistics:\n` +
         `• Active Reminders: ${stats.activeReminders}\n` +
-        `• Snoozed Notifications: ${stats.snoozedNotifications}\n` +
         `• Scheduled Notifications: ${stats.scheduledNotifications}\n` +
-        `• Daily: ${stats.reminderTypes.daily}, Weekly: ${stats.reminderTypes.weekly}, Interval: ${stats.reminderTypes.interval}\n\n`
+        `• Daily: ${stats.reminderTypes.daily}, Weekly: ${stats.reminderTypes.weekly}\n\n`
         : '';
       
-      const reminderText = Object.keys(activeReminders).length > 0 ?
-        `🔔 Active Reminders:\n${Object.entries(activeReminders).map(([key, data]) => 
-          `• ${data.title}: ${data.type} (${data.active ? 'Active' : 'Inactive'})`
-        ).join('\n')}\n\n` : '';
-      
-      const scheduledText = scheduled.length === 0 
-        ? 'No notifications scheduled' 
-        : `📅 Scheduled (${scheduled.length}):\n${scheduled.map(n => 
-            `• ${n.content.title}: ${n.content.body}\n  Trigger: ${JSON.stringify(n.trigger)}`
-          ).join('\n')}`;
-          
-      Alert.alert(
-        'Notification Status',
-        statsText + reminderText + scheduledText
-      );
+      Alert.alert('Notification Status', statsText + `Total Scheduled: ${scheduled.length}`);
     } catch (error) {
       Alert.alert('Error', `Failed to get notification status: ${error.message}`);
     }
   };
 
-  // Debug: Cancel all scheduled notifications and reminders
   const clearAllNotifications = async () => {
-    try {
-      // Cancel all scheduled notifications
-      await cancelAllScheduledNotifications();
-      // Cancel all active reminders
-      await cancelAllReminders();
-      
-      // Update stats
-      await updateNotificationStats();
-      
-      Alert.alert('Success', 'All scheduled notifications and reminders cleared');
-    } catch (error) {
-      Alert.alert('Error', `Failed to clear notifications: ${error.message}`);
-    }
+    Alert.alert(
+      'Clear All Notifications',
+      'This will cancel all scheduled reminders. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelAllScheduledNotifications();
+              await cancelAllReminders();
+              await updateNotificationStats();
+              Alert.alert('Success', 'All notifications cleared');
+            } catch (error) {
+              Alert.alert('Error', `Failed to clear notifications: ${error.message}`);
+            }
+          }
+        }
+      ]
+    );
   };
 
-  // Debug: Test immediate notification
-  const testNotification = async () => {
-    try {
-      await testImmediateNotification();
-      Alert.alert('Test Sent', 'Check if you received the immediate test notification');
-    } catch (error) {
-      Alert.alert('Error', `Failed to send test notification: ${error.message}`);
-    }
-  };
-
-  // Debug: Test calendar notification
-  const testCalendar = async () => {
-    try {
-      await testCalendarNotification(1); // 1 minute from now
-      Alert.alert('Calendar Test Sent', 'Calendar notification scheduled for 1 minute from now. Check if it arrives at the correct time.');
-    } catch (error) {
-      Alert.alert('Error', `Failed to send calendar test: ${error.message}`);
-    }
-  };
+  const renderTabBar = () => (
+    <View style={styles.tabBar}>
+      <TouchableOpacity 
+        style={[styles.tabButton, selectedTab === 'active' && styles.activeTab]}
+        onPress={() => setSelectedTab('active')}
+      >
+        <Text style={[styles.tabText, selectedTab === 'active' && styles.activeTabText]}>
+          Active ({reminders.length})
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity 
+        style={[styles.tabButton, selectedTab === 'completed' && styles.activeTab]}
+        onPress={() => setSelectedTab('completed')}
+      >
+        <Text style={[styles.tabText, selectedTab === 'completed' && styles.activeTabText]}>
+          Completed ({completedReminders.length})
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity 
+        style={[styles.tabButton, selectedTab === 'stats' && styles.activeTab]}
+        onPress={() => setSelectedTab('stats')}
+      >
+        <Text style={[styles.tabText, selectedTab === 'stats' && styles.activeTabText]}>
+          Stats
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   const renderReminder = ({ item }) => {
+    const isCompleted = item.completed;
+    const category = categories[item.category] || categories['Personal'];
+    const priority = priorities[item.priority] || priorities['medium'];
+    
     const getTimeDisplay = () => {
       switch (item.type) {
         case 'daily':
@@ -410,175 +594,449 @@ export default function App() {
       }
     };
 
-    const getTypeEmoji = () => {
-      return reminderTypes[item.type || 'one-time']?.emoji || '⏰';
-    };
-
     return (
       <TouchableOpacity 
-        style={[styles.reminderItem, { borderLeftColor: categories[item.category]?.color || '#4A90E2' }]}
-        onLongPress={() => deleteReminder(item.id)}
+        style={[
+          styles.reminderItem, 
+          { 
+            borderLeftColor: category.color,
+            opacity: isCompleted ? 0.7 : 1
+          }
+        ]}
+        onPress={() => isCompleted ? null : editReminder(item)}
+        onLongPress={() => deleteReminder(item.id, isCompleted)}
       >
         <View style={styles.reminderContent}>
           <View style={styles.reminderHeader}>
-            <Text style={styles.categoryEmoji}>{categories[item.category]?.emoji || '👤'}</Text>
-            <Text style={[styles.categoryText, { color: categories[item.category]?.color || '#4A90E2' }]}>
-              {item.category || 'Personal'}
+            <Text style={styles.categoryEmoji}>{category.emoji}</Text>
+            <Text style={[styles.categoryText, { color: category.color }]}>
+              {item.category}
             </Text>
-            <Text style={styles.typeEmoji}>{getTypeEmoji()}</Text>
-            <TouchableOpacity 
-              style={styles.deleteButton}
-              onPress={() => deleteReminder(item.id)}
-            >
-              <Text style={styles.deleteButtonText}>✕</Text>
-            </TouchableOpacity>
+            <Text style={styles.priorityEmoji}>{priority.emoji}</Text>
+            <View style={styles.headerActions}>
+              {!isCompleted && (
+                <TouchableOpacity 
+                  style={[styles.completeButton, { backgroundColor: '#4CAF50' }]}
+                  onPress={() => completeReminder(item.id)}
+                >
+                  <Text style={styles.completeButtonText}>✓</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity 
+                style={styles.deleteButton}
+                onPress={() => deleteReminder(item.id, isCompleted)}
+              >
+                <Text style={styles.deleteButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <Text style={styles.reminderText}>• {item.text}</Text>
-          <Text style={styles.timeText}>
-            {getTimeDisplay()}
+          
+          <Text style={[styles.reminderText, isCompleted && styles.completedText]}>
+            {item.text}
           </Text>
+          
+          {item.note && (
+            <Text style={styles.noteText}>Note: {item.note}</Text>
+          )}
+          
+          <View style={styles.reminderFooter}>
+            <Text style={styles.timeText}>{getTimeDisplay()}</Text>
+            {isCompleted && item.completedAt && (
+              <Text style={styles.completedAtText}>
+                Completed: {new Date(item.completedAt).toLocaleDateString()}
+              </Text>
+            )}
+          </View>
         </View>
       </TouchableOpacity>
     );
   };
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Blink Reminder App</Text>
-
-      {/* Category Selector */}
-      <TouchableOpacity 
-        style={[styles.selectorButton, { borderColor: categories[selectedCategory].color }]}
-        onPress={() => setShowCategoryModal(true)}
-      >
-        <Text style={styles.selectorEmoji}>{categories[selectedCategory].emoji}</Text>
-        <Text style={[styles.selectorText, { color: categories[selectedCategory].color }]}>
-          {selectedCategory}
-        </Text>
-        <Text style={styles.arrow}>▼</Text>
-      </TouchableOpacity>
-
-      {/* Reminder Type Selector */}
-      <TouchableOpacity 
-        style={[styles.selectorButton, { borderColor: '#FF6B6B' }]}
-        onPress={() => setShowReminderTypeModal(true)}
-      >
-        <Text style={styles.selectorEmoji}>{reminderTypes[reminderType].emoji}</Text>
-        <Text style={[styles.selectorText, { color: '#FF6B6B' }]}>
-          {reminderTypes[reminderType].label}
-        </Text>
-        <Text style={styles.arrow}>▼</Text>
-      </TouchableOpacity>
-
-      {/* Conditional Time/Schedule Selectors */}
-      {reminderType === 'one-time' && (
-        <TouchableOpacity 
-          style={styles.selectorButton}
-          onPress={() => setShowTimeModal(true)}
-        >
-          <Text style={styles.selectorEmoji}>⏰</Text>
-          <Text style={styles.selectorText}>
-            {timeOptions.find(t => t.value === selectedTime)?.label}
-          </Text>
-          <Text style={styles.arrow}>▼</Text>
-        </TouchableOpacity>
-      )}
-
-      {reminderType === 'daily' && (
-        <TouchableOpacity 
-          style={styles.selectorButton}
-          onPress={() => setShowDailyTimeModal(true)}
-        >
-          <Text style={styles.selectorEmoji}>🕘</Text>
-          <Text style={styles.selectorText}>
-            Daily at {String(dailyTime.hour).padStart(2, '0')}:{String(dailyTime.minute).padStart(2, '0')}
-          </Text>
-          <Text style={styles.arrow}>▼</Text>
-        </TouchableOpacity>
-      )}
-
-      {reminderType === 'weekly' && (
-        <TouchableOpacity 
-          style={styles.selectorButton}
-          onPress={() => setShowWeeklyTimeModal(true)}
-        >
-          <Text style={styles.selectorEmoji}>📆</Text>
-          <Text style={styles.selectorText}>
-            {weekdays.find(w => w.value === weeklyTime.weekday)?.label} at {String(weeklyTime.hour).padStart(2, '0')}:{String(weeklyTime.minute).padStart(2, '0')}
-          </Text>
-          <Text style={styles.arrow}>▼</Text>
-        </TouchableOpacity>
-      )}
-
-      {reminderType === 'interval' && (
-        <TouchableOpacity 
-          style={styles.selectorButton}
-          onPress={() => setShowIntervalModal(true)}
-        >
-          <Text style={styles.selectorEmoji}>🔄</Text>
-          <Text style={styles.selectorText}>
-            Every {intervalOptions.find(i => i.value === intervalMinutes)?.label || `${intervalMinutes} minutes`}
-          </Text>
-          <Text style={styles.arrow}>▼</Text>
-        </TouchableOpacity>
-      )}
-
-      <TextInput
-        style={styles.input}
-        placeholder="Enter your reminder"
-        value={reminder}
-        onChangeText={setReminder}
-      />
-      
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.addButton} onPress={addReminder}>
-          <Text style={styles.addButtonText}>Add Reminder</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.persistentButton} onPress={createPersistentReminder}>
-          <Text style={styles.persistentButtonText}>📌 Sticky</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Notification Stats Display */}
+  const renderStatsView = () => (
+    <ScrollView style={styles.statsView} refreshControl={
+      <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+    }>
       {notificationStats && (
         <View style={styles.statsContainer}>
-          <Text style={styles.statsTitle}>📊 Notification Stats</Text>
-          <View style={styles.statsRow}>
-            <Text style={styles.statsText}>Active: {notificationStats.activeReminders}</Text>
-            <Text style={styles.statsText}>Snoozed: {notificationStats.snoozedNotifications}</Text>
-            <Text style={styles.statsText}>Scheduled: {notificationStats.scheduledNotifications}</Text>
+          <Text style={styles.statsTitle}>📊 Notification Statistics</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{notificationStats.activeReminders}</Text>
+              <Text style={styles.statLabel}>Active</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{completedReminders.length}</Text>
+              <Text style={styles.statLabel}>Completed</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{notificationStats.scheduledNotifications}</Text>
+              <Text style={styles.statLabel}>Scheduled</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{notificationStats.snoozedNotifications}</Text>
+              <Text style={styles.statLabel}>Snoozed</Text>
+            </View>
           </View>
         </View>
       )}
 
-      {/* Debug buttons */}
+      <View style={styles.categoryStatsContainer}>
+        <Text style={styles.statsTitle}>📈 Category Breakdown</Text>
+        {Object.entries(categories).map(([name, info]) => {
+          const count = reminders.filter(r => r.category === name).length;
+          const completedCount = completedReminders.filter(r => r.category === name).length;
+          if (count === 0 && completedCount === 0) return null;
+          
+          return (
+            <View key={name} style={styles.categoryStatItem}>
+              <Text style={styles.categoryEmoji}>{info.emoji}</Text>
+              <Text style={[styles.categoryStatName, { color: info.color }]}>{name}</Text>
+              <Text style={styles.categoryStatCount}>Active: {count} | Done: {completedCount}</Text>
+            </View>
+          );
+        })}
+      </View>
+
       <View style={styles.debugContainer}>
         <TouchableOpacity style={styles.debugButton} onPress={showScheduledNotifications}>
-          <Text style={styles.debugButtonText}>Show Scheduled</Text>
+          <Text style={styles.debugButtonText}>View Scheduled</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.debugButton} onPress={clearAllNotifications}>
           <Text style={styles.debugButtonText}>Clear All</Text>
         </TouchableOpacity>
       </View>
-      
-      {/* Test buttons */}
+
       <View style={styles.debugContainer}>
-        <TouchableOpacity style={styles.testButton} onPress={testNotification}>
-          <Text style={styles.debugButtonText}>🧪 Test Immediate</Text>
+        <TouchableOpacity style={styles.testButton} onPress={testImmediateNotification}>
+          <Text style={styles.debugButtonText}>🧪 Test Now</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.testButton} onPress={testCalendar}>
-          <Text style={styles.debugButtonText}>📅 Test Calendar</Text>
+        <TouchableOpacity style={styles.testButton} onPress={testCalendarNotification}>
+          <Text style={styles.debugButtonText}>📅 Test 1min</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <Text style={styles.loadingText}>Loading Blink Reminder...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, settings.darkMode && styles.darkContainer]}>
+      <StatusBar barStyle={settings.darkMode ? "light-content" : "dark-content"} />
+      
+      <View style={styles.header}>
+        <Text style={[styles.title, settings.darkMode && styles.darkText]}>
+          Blink Reminder App
+        </Text>
+        <TouchableOpacity 
+          style={styles.settingsButton}
+          onPress={() => setShowSettingsModal(true)}
+        >
+          <Text style={styles.settingsButtonText}>⚙️</Text>
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        style={styles.list}
-        data={reminders}
-        keyExtractor={(item) => item.id}
-        renderItem={renderReminder}
-        showsVerticalScrollIndicator={false}
+      {/* Search Bar */}
+      <TextInput
+        style={[styles.searchInput, settings.darkMode && styles.darkInput]}
+        placeholder="Search reminders..."
+        placeholderTextColor={settings.darkMode ? '#999' : '#666'}
+        value={searchQuery}
+        onChangeText={setSearchQuery}
       />
+
+      {/* Tab Bar */}
+      {renderTabBar()}
+
+      {/* Add Reminder Form - only show on active tab */}
+      {selectedTab === 'active' && (
+        <View style={styles.formContainer}>
+          {/* Category Selector */}
+          <TouchableOpacity 
+            style={[styles.selectorButton, { borderColor: categories[selectedCategory].color }]}
+            onPress={() => setShowCategoryModal(true)}
+          >
+            <Text style={styles.selectorEmoji}>{categories[selectedCategory].emoji}</Text>
+            <Text style={[styles.selectorText, { color: categories[selectedCategory].color }]}>
+              {selectedCategory}
+            </Text>
+            <Text style={styles.arrow}>▼</Text>
+          </TouchableOpacity>
+
+          {/* Priority Selector */}
+          <TouchableOpacity 
+            style={[styles.selectorButton, { borderColor: priorities[selectedPriority].color }]}
+            onPress={() => setShowPriorityModal(true)}
+          >
+            <Text style={styles.selectorEmoji}>{priorities[selectedPriority].emoji}</Text>
+            <Text style={[styles.selectorText, { color: priorities[selectedPriority].color }]}>
+              {priorities[selectedPriority].label}
+            </Text>
+            <Text style={styles.arrow}>▼</Text>
+          </TouchableOpacity>
+
+          {/* Reminder Type Selector */}
+          <TouchableOpacity 
+            style={[styles.selectorButton, { borderColor: '#FF6B6B' }]}
+            onPress={() => setShowReminderTypeModal(true)}
+          >
+            <Text style={styles.selectorEmoji}>{reminderTypes[reminderType].emoji}</Text>
+            <Text style={[styles.selectorText, { color: '#FF6B6B' }]}>
+              {reminderTypes[reminderType].label}
+            </Text>
+            <Text style={styles.arrow}>▼</Text>
+          </TouchableOpacity>
+
+          {/* Conditional Time/Schedule Selectors */}
+          {reminderType === 'one-time' && (
+            <TouchableOpacity 
+              style={styles.selectorButton}
+              onPress={() => setShowTimeModal(true)}
+            >
+              <Text style={styles.selectorEmoji}>⏰</Text>
+              <Text style={styles.selectorText}>
+                {timeOptions.find(t => t.value === selectedTime)?.label}
+              </Text>
+              <Text style={styles.arrow}>▼</Text>
+            </TouchableOpacity>
+          )}
+
+          {reminderType === 'daily' && (
+            <TouchableOpacity 
+              style={styles.selectorButton}
+              onPress={() => setShowDailyTimeModal(true)}
+            >
+              <Text style={styles.selectorEmoji}>🕘</Text>
+              <Text style={styles.selectorText}>
+                Daily at {String(dailyTime.hour).padStart(2, '0')}:{String(dailyTime.minute).padStart(2, '0')}
+              </Text>
+              <Text style={styles.arrow}>▼</Text>
+            </TouchableOpacity>
+          )}
+
+          {reminderType === 'weekly' && (
+            <TouchableOpacity 
+              style={styles.selectorButton}
+              onPress={() => setShowWeeklyTimeModal(true)}
+            >
+              <Text style={styles.selectorEmoji}>📆</Text>
+              <Text style={styles.selectorText}>
+                {weekdays.find(w => w.value === weeklyTime.weekday)?.label} at {String(weeklyTime.hour).padStart(2, '0')}:{String(weeklyTime.minute).padStart(2, '0')}
+              </Text>
+              <Text style={styles.arrow}>▼</Text>
+            </TouchableOpacity>
+          )}
+
+          {reminderType === 'interval' && (
+            <TouchableOpacity 
+              style={styles.selectorButton}
+              onPress={() => setShowIntervalModal(true)}
+            >
+              <Text style={styles.selectorEmoji}>🔄</Text>
+              <Text style={styles.selectorText}>
+                Every {intervalOptions.find(i => i.value === intervalMinutes)?.label || `${intervalMinutes} minutes`}
+              </Text>
+              <Text style={styles.arrow}>▼</Text>
+            </TouchableOpacity>
+          )}
+
+          <TextInput
+            style={[styles.input, settings.darkMode && styles.darkInput]}
+            placeholder="Enter your reminder"
+            placeholderTextColor={settings.darkMode ? '#999' : '#666'}
+            value={reminder}
+            onChangeText={setReminder}
+          />
+          
+          <TextInput
+            style={[styles.noteInput, settings.darkMode && styles.darkInput]}
+            placeholder="Add a note (optional)"
+            placeholderTextColor={settings.darkMode ? '#999' : '#666'}
+            value={reminderNote}
+            onChangeText={setReminderNote}
+            multiline={true}
+            numberOfLines={2}
+          />
+          
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity style={styles.addButton} onPress={addReminder}>
+              <Text style={styles.addButtonText}>Add Reminder</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.persistentButton} onPress={createPersistentReminder}>
+              <Text style={styles.persistentButtonText}>📌 Sticky</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Content based on selected tab */}
+      {selectedTab === 'active' && (
+        <FlatList
+          style={styles.list}
+          data={getFilteredReminders()}
+          keyExtractor={(item) => item.id}
+          renderItem={renderReminder}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No active reminders</Text>
+              <Text style={styles.emptySubtext}>Add a reminder to get started!</Text>
+            </View>
+          }
+        />
+      )}
+
+      {selectedTab === 'completed' && (
+        <FlatList
+          style={styles.list}
+          data={getFilteredCompletedReminders()}
+          keyExtractor={(item) => item.id}
+          renderItem={renderReminder}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No completed reminders</Text>
+              <Text style={styles.emptySubtext}>Complete some reminders to see them here!</Text>
+            </View>
+          }
+        />
+      )}
+
+      {selectedTab === 'stats' && renderStatsView()}
+
+      {/* All Modals */}
+      
+      {/* Settings Modal */}
+      <Modal visible={showSettingsModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Settings</Text>
+            
+            <View style={styles.settingItem}>
+              <Text style={styles.settingLabel}>Sound Notifications</Text>
+              <Switch
+                value={settings.soundEnabled}
+                onValueChange={(value) => saveSettings({ ...settings, soundEnabled: value })}
+              />
+            </View>
+            
+            <View style={styles.settingItem}>
+              <Text style={styles.settingLabel}>Vibration</Text>
+              <Switch
+                value={settings.vibrationEnabled}
+                onValueChange={(value) => saveSettings({ ...settings, vibrationEnabled: value })}
+              />
+            </View>
+            
+            <View style={styles.settingItem}>
+              <Text style={styles.settingLabel}>Dark Mode</Text>
+              <Switch
+                value={settings.darkMode}
+                onValueChange={(value) => saveSettings({ ...settings, darkMode: value })}
+              />
+            </View>
+            
+            <View style={styles.settingItem}>
+              <Text style={styles.settingLabel}>Auto Cleanup (30 days)</Text>
+              <Switch
+                value={settings.autoCleanup}
+                onValueChange={(value) => saveSettings({ ...settings, autoCleanup: value })}
+              />
+            </View>
+
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setShowSettingsModal(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Reminder Modal */}
+      <Modal visible={showEditModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Reminder</Text>
+            
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your reminder"
+              value={reminder}
+              onChangeText={setReminder}
+            />
+            
+            <TextInput
+              style={styles.noteInput}
+              placeholder="Add a note (optional)"
+              value={reminderNote}
+              onChangeText={setReminderNote}
+              multiline={true}
+              numberOfLines={2}
+            />
+
+            <View style={styles.modalButtonContainer}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowEditModal(false);
+                  setEditingReminder(null);
+                  setReminder('');
+                  setReminderNote('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={updateReminder}
+              >
+                <Text style={styles.saveButtonText}>Update</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Priority Modal */}
+      <Modal visible={showPriorityModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Priority</Text>
+            {Object.entries(priorities).map(([key, priority]) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.categoryOption, selectedPriority === key && styles.selectedOption]}
+                onPress={() => {
+                  setSelectedPriority(key);
+                  setShowPriorityModal(false);
+                }}
+              >
+                <Text style={styles.categoryEmoji}>{priority.emoji}</Text>
+                <Text style={[styles.categoryOptionText, { color: priority.color }]}>
+                  {priority.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setShowPriorityModal(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Reminder Type Modal */}
       <Modal visible={showReminderTypeModal} transparent animationType="slide">
@@ -712,7 +1170,7 @@ export default function App() {
             </View>
             <TouchableOpacity 
               style={styles.closeButton}
-              onPress={() => setShowWeeklyTimeModal(false)}
+              onPress={() => setWeeklyTimeModal(false)}
             >
               <Text style={styles.closeButtonText}>Set Schedule</Text>
             </TouchableOpacity>
@@ -808,29 +1266,111 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    backgroundColor: '#f8f9fa'
+  },
+  darkContainer: {
+    backgroundColor: '#1a1a1a'
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  loadingText: {
+    fontSize: 18,
+    color: '#666'
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
     paddingTop: 50,
-    backgroundColor: '#f2f2f2'
+    paddingBottom: 10
   },
   title: { 
     fontSize: 24, 
-    fontWeight: 'bold', 
-    marginBottom: 20, 
-    textAlign: 'center' 
+    fontWeight: 'bold',
+    color: '#333'
+  },
+  darkText: {
+    color: '#fff'
+  },
+  settingsButton: {
+    padding: 8
+  },
+  settingsButtonText: {
+    fontSize: 20
+  },
+  searchInput: {
+    marginHorizontal: 20,
+    marginBottom: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#e1e5e9'
+  },
+  darkInput: {
+    backgroundColor: '#333',
+    borderColor: '#555',
+    color: '#fff'
+  },
+  tabBar: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginBottom: 15,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    alignItems: 'center'
+  },
+  activeTab: {
+    backgroundColor: '#007AFF'
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666'
+  },
+  activeTabText: {
+    color: 'white',
+    fontWeight: '600'
+  },
+  formContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 10
   },
   selectorButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'white',
     padding: 12,
-    borderRadius: 8,
-    marginBottom: 10,
+    borderRadius: 12,
+    marginBottom: 8,
     borderWidth: 2,
-    borderColor: '#ddd'
+    borderColor: '#e1e5e9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1
   },
   selectorEmoji: {
     fontSize: 20,
-    marginRight: 10
+    marginRight: 12
   },
   selectorText: {
     flex: 1,
@@ -839,81 +1379,116 @@ const styles = StyleSheet.create({
   },
   arrow: {
     fontSize: 12,
-    color: '#666'
+    color: '#999'
   },
   input: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 8,
+    fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 10,
-    backgroundColor: 'white'
+    borderColor: '#e1e5e9'
   },
-  debugContainer: {
+  noteInput: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 12,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    minHeight: 60,
+    textAlignVertical: 'top'
+  },
+  buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 10,
-    marginBottom: 10
+    gap: 12
   },
-  debugButton: {
-    backgroundColor: '#666',
-    padding: 8,
-    borderRadius: 5,
-    flex: 0.48
-  },
-  debugButtonText: {
-    color: 'white',
-    textAlign: 'center',
-    fontSize: 12
-  },
-  testButton: {
+  addButton: {
     backgroundColor: '#007AFF',
-    padding: 8,
-    borderRadius: 5,
-    flex: 0.48
+    padding: 15,
+    borderRadius: 12,
+    flex: 0.7,
+    alignItems: 'center'
+  },
+  addButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600'
+  },
+  persistentButton: {
+    backgroundColor: '#FF6B6B',
+    padding: 15,
+    borderRadius: 12,
+    flex: 0.25,
+    alignItems: 'center'
+  },
+  persistentButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600'
   },
   list: { 
-    marginTop: 20 
+    flex: 1,
+    paddingHorizontal: 20
   },
   reminderItem: {
     backgroundColor: 'white',
-    borderRadius: 8,
-    marginBottom: 10,
+    borderRadius: 12,
+    marginBottom: 12,
     borderLeftWidth: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2
+    shadowRadius: 4,
+    elevation: 3
   },
   reminderContent: {
-    padding: 12
+    padding: 15
   },
   reminderHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 5
+    marginBottom: 8
   },
   categoryEmoji: {
     fontSize: 16,
     marginRight: 8
   },
-  typeEmoji: {
-    fontSize: 14,
-    marginRight: 8,
-    opacity: 0.7
-  },
   categoryText: {
     flex: 1,
     fontSize: 12,
     fontWeight: '600',
-    textTransform: 'uppercase'
+    textTransform: 'uppercase',
+    letterSpacing: 0.5
+  },
+  priorityEmoji: {
+    fontSize: 14,
+    marginRight: 8
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8
+  },
+  completeButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  completeButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold'
   },
   deleteButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#ff4444',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ff4757',
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -924,13 +1499,148 @@ const styles = StyleSheet.create({
   },
   reminderText: {
     fontSize: 16,
-    marginBottom: 5,
-    color: '#333'
+    color: '#333',
+    marginBottom: 6,
+    lineHeight: 22
+  },
+  completedText: {
+    textDecorationLine: 'line-through',
+    color: '#999'
+  },
+  noteText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+    marginBottom: 8,
+    lineHeight: 18
+  },
+  reminderFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
   },
   timeText: {
     fontSize: 12,
+    color: '#999',
+    fontWeight: '500'
+  },
+  completedAtText: {
+    fontSize: 11,
+    color: '#4CAF50',
+    fontWeight: '500'
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 50
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#999',
+    fontWeight: '500'
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#bbb',
+    marginTop: 8
+  },
+  statsView: {
+    flex: 1,
+    paddingHorizontal: 20
+  },
+  statsContainer: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  statsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 15,
+    textAlign: 'center'
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between'
+  },
+  statItem: {
+    width: '48%',
+    alignItems: 'center',
+    paddingVertical: 15,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginBottom: 10
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#007AFF'
+  },
+  statLabel: {
+    fontSize: 14,
     color: '#666',
-    fontStyle: 'italic'
+    marginTop: 4
+  },
+  categoryStatsContainer: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  categoryStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0'
+  },
+  categoryStatName: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 10
+  },
+  categoryStatCount: {
+    fontSize: 12,
+    color: '#666'
+  },
+  debugContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+    gap: 10
+  },
+  debugButton: {
+    backgroundColor: '#6c757d',
+    padding: 12,
+    borderRadius: 8,
+    flex: 1,
+    alignItems: 'center'
+  },
+  testButton: {
+    backgroundColor: '#007AFF',
+    padding: 12,
+    borderRadius: 8,
+    flex: 1,
+    alignItems: 'center'
+  },
+  debugButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500'
   },
   modalOverlay: {
     flex: 1,
@@ -940,16 +1650,57 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    minWidth: 280,
+    borderRadius: 16,
+    padding: 24,
+    minWidth: width * 0.85,
     maxHeight: '80%'
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 20
+    marginBottom: 20,
+    color: '#333'
+  },
+  settingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0'
+  },
+  settingLabel: {
+    fontSize: 16,
+    color: '#333'
+  },
+  modalButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    gap: 12
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center'
+  },
+  cancelButton: {
+    backgroundColor: '#6c757d'
+  },
+  cancelButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '500'
+  },
+  saveButton: {
+    backgroundColor: '#007AFF'
+  },
+  saveButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600'
   },
   categoryOption: {
     flexDirection: 'row',
@@ -978,42 +1729,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
     padding: 12,
     borderRadius: 8,
-    marginTop: 10
+    marginTop: 15,
+    alignItems: 'center'
   },
   closeButtonText: {
     color: 'white',
-    textAlign: 'center',
     fontSize: 16,
-    fontWeight: '600'
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-    gap: 10
-  },
-  addButton: {
-    backgroundColor: '#007AFF',
-    padding: 12,
-    borderRadius: 8,
-    flex: 0.7
-  },
-  addButtonText: {
-    color: 'white',
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '600'
-  },
-  persistentButton: {
-    backgroundColor: '#FF6B6B',
-    padding: 12,
-    borderRadius: 8,
-    flex: 0.25
-  },
-  persistentButtonText: {
-    color: 'white',
-    textAlign: 'center',
-    fontSize: 14,
     fontWeight: '600'
   },
   reminderTypeOption: {
@@ -1071,33 +1792,5 @@ const styles = StyleSheet.create({
     color: '#333',
     marginTop: 15,
     marginBottom: 10
-  },
-  statsContainer: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 10,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2
-  },
-  statsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-    textAlign: 'center'
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around'
-  },
-  statsText: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center'
   }
 });

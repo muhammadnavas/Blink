@@ -1,4 +1,4 @@
-import { AudioRecorder, AudioRecorderStatus } from 'expo-audio';
+import { AudioRecorder } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import { useRef, useState } from 'react';
 import {

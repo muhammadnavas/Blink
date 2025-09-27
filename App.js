@@ -251,6 +251,13 @@ export default function App() {
         ...(smartReminder.scheduledDate && { scheduledDate: smartReminder.scheduledDate.toISOString() })
       };
       
+      console.log('🧠 DEBUG: Smart reminder converted:', {
+        smartTime: smartReminder.time,
+        finalTime: newReminder.time,
+        type: smartReminder.type,
+        text: smartReminder.text
+      });
+      
       const newReminders = [...reminders, newReminder];
       await saveReminders(newReminders);
       
@@ -318,8 +325,17 @@ export default function App() {
       const { text, reminderKey, type, priority } = reminderData;
       const priorityEmoji = priorities[priority].emoji;
       
+      console.log('🔧 DEBUG: Scheduling notification for:', {
+        type,
+        text,
+        time: reminderData.time,
+        timeType: typeof reminderData.time,
+        smartParsed: reminderData.smartParsed
+      });
+      
       switch (type) {
         case 'one-time':
+          console.log('🕐 One-time reminder scheduling with time:', reminderData.time, 'seconds');
           notificationId = await scheduleLocalNotification(
             `${priorityEmoji} Reminder`, 
             text, 
@@ -601,6 +617,50 @@ export default function App() {
     );
   };
 
+  const testOneHourTiming = async () => {
+    console.log('🔍 === TESTING NOTIFICATION TIMING (WITH MINIMUM DELAY) ===');
+    
+    const tests = [
+      { name: '30 seconds', seconds: 30, expected: 'Should be delayed to 10s minimum' },
+      { name: '1 minute', seconds: 60, expected: '1 minute from now' },
+      { name: '5 minutes', seconds: 300, expected: '5 minutes from now' },
+      { name: '1 hour', seconds: 3600, expected: '1 hour from now' }
+    ];
+    
+    const results = [];
+    
+    for (const test of tests) {
+      console.log(`\n🧪 Testing ${test.name} (${test.seconds} seconds)...`);
+      try {
+        const id = await scheduleLocalNotification(
+          `${test.name} Test`,
+          `This should appear ${test.expected}`,
+          test.seconds
+        );
+        console.log(`✅ ${test.name} scheduled with ID: ${id}`);
+        results.push(`✅ ${test.name}: ${id}`);
+      } catch (error) {
+        console.error(`❌ ${test.name} failed:`, error);
+        results.push(`❌ ${test.name}: Failed`);
+      }
+    }
+    
+    const currentTime = new Date();
+    console.log(`🕐 Current time: ${currentTime.toLocaleString()}`);
+    console.log(`🕐 Expected notifications at:`);
+    console.log(`  - 10 seconds: ${new Date(currentTime.getTime() + 10000).toLocaleString()}`);
+    console.log(`  - 1 minute: ${new Date(currentTime.getTime() + 60000).toLocaleString()}`);
+    console.log(`  - 5 minutes: ${new Date(currentTime.getTime() + 300000).toLocaleString()}`);
+    console.log(`  - 1 hour: ${new Date(currentTime.getTime() + 3600000).toLocaleString()}`);
+    
+    Alert.alert(
+      'Timing Tests Scheduled', 
+      results.join('\n') + '\n\nWatch for notifications at the expected times. Check console for detailed timing info.'
+    );
+    
+    console.log('🔍 === END OF NOTIFICATION TIMING TESTS ===');
+  };
+
   const renderTabBar = () => (
     <View style={styles.tabBar}>
       <TouchableOpacity 
@@ -775,6 +835,9 @@ export default function App() {
         </TouchableOpacity>
         <TouchableOpacity style={styles.testButton} onPress={() => testAndroidNotification(1)}>
           <Text style={styles.debugButtonText}>🤖 Android 1min</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.testButton} onPress={() => testOneHourTiming()}>
+          <Text style={styles.debugButtonText}>⏰ Test 1 Hour</Text>
         </TouchableOpacity>
       </View>
 

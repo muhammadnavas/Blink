@@ -144,34 +144,116 @@ export async function registerForPushNotificationsAsync() {
  */
 export async function scheduleLocalNotification(title, body, seconds = 5) {
   try {
-    console.log(`📅 Scheduling notification "${title}" for ${seconds} seconds from now`);
+    // Check notification permissions first
+    const { status } = await Notifications.getPermissionsAsync();
+    console.log(`🔧 DEBUG: Notification permission status: ${status}`);
     
-    // First, let's try the simpler format that works in Expo Go
+    if (status !== 'granted') {
+      console.warn('⚠️ WARNING: Notification permissions not granted, requesting...');
+      const permissionResponse = await Notifications.requestPermissionsAsync();
+      console.log(`🔧 DEBUG: Permission request result: ${permissionResponse.status}`);
+    }
+    
+    console.log(`📅 Scheduling notification "${title}" for ${seconds} seconds from now`);
+    console.log(`🔧 DEBUG: seconds type: ${typeof seconds}, value: ${seconds}`);
+    
+    // Ensure seconds is a valid number and catch common issues
+    let validSeconds = Math.max(1, Math.floor(Number(seconds)));
+    
+    // Common issue fixes
+    if (seconds === 0 || seconds === null || seconds === undefined) {
+      console.warn(`⚠️ FIXING: Invalid seconds value (${seconds}), using 300 seconds (5 minutes) instead`);
+      validSeconds = 300;
+    }
+    
+    // If seconds is way too large (might be milliseconds instead of seconds)
+    if (seconds > 86400 && seconds < 86400000) { // Between 1 day and 1 day in milliseconds
+      console.warn(`⚠️ FIXING: Seconds value (${seconds}) seems to be in milliseconds, converting...`);
+      validSeconds = Math.max(1, Math.floor(seconds / 1000));
+    }
+    
+    // If seconds is suspiciously small for a 1-hour reminder
+    if (seconds < 60 && title.includes('1 hour')) {
+      console.warn(`⚠️ FIXING: 1-hour reminder with ${seconds} seconds, using 3600 instead`);
+      validSeconds = 3600;
+    }
+    
+    console.log(`🔧 DEBUG: validSeconds after processing: ${validSeconds}`);
+    
+    if (validSeconds !== Number(seconds)) {
+      console.warn(`⚠️ WARNING: seconds value changed from ${seconds} to ${validSeconds}`);
+    }
+    
+    // Calculate expected trigger time
+    const expectedTime = new Date(Date.now() + validSeconds * 1000);
+    console.log(`🕐 DEBUG: Expected notification time: ${expectedTime.toLocaleString()}`);
+    
+    // Ensure minimum delay for Expo Go compatibility
+    const minSeconds = Math.max(10, validSeconds); // Minimum 10 seconds
+    const finalExpectedTime = new Date(Date.now() + minSeconds * 1000);
+    
+    console.log(`🔧 DEBUG: Using timeInterval trigger with ${minSeconds} seconds (min 10s enforced)`);
+    console.log(`🔧 DEBUG: Final expected time: ${finalExpectedTime.toLocaleString()}`);
+    
     const identifier = await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
-        data: { timestamp: Date.now() },
+        data: { 
+          timestamp: Date.now(),
+          scheduledFor: finalExpectedTime.toISOString(),
+          originalSeconds: validSeconds,
+          adjustedSeconds: minSeconds
+        },
       },
-      trigger: { seconds },
+      trigger: {
+        type: 'timeInterval',
+        seconds: minSeconds,
+      },
     });
     
     console.log(`✅ Notification scheduled with ID: ${identifier}`);
+    
+    // Verify the notification was scheduled correctly
+    try {
+      const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
+      const thisNotification = allScheduled.find(n => n.identifier === identifier);
+      if (thisNotification) {
+        console.log(`🔍 VERIFY: Notification found in scheduled list:`, {
+          identifier: thisNotification.identifier,
+          trigger: thisNotification.trigger,
+          content: thisNotification.content.title
+        });
+      } else {
+        console.warn(`⚠️ WARNING: Scheduled notification ${identifier} not found in scheduled list`);
+      }
+    } catch (verifyError) {
+      console.warn('⚠️ Could not verify scheduled notification:', verifyError.message);
+    }
+    
     return identifier;
   } catch (error) {
     console.error('❌ Error scheduling notification:', error);
     // Try alternative format if first fails
     try {
       console.log('🔄 Trying alternative trigger format...');
+      console.log(`🔧 DEBUG ALT: Using seconds value: ${seconds} (type: ${typeof seconds})`);
+      
+      const altValidSeconds = Math.max(1, Math.floor(Number(seconds)));
+      console.log(`🔧 DEBUG ALT: Using processed seconds: ${altValidSeconds}`);
+      
       const identifier = await Notifications.scheduleNotificationAsync({
         content: {
           title,
           body,
-          data: { timestamp: Date.now() },
+          data: { 
+            timestamp: Date.now(),
+            scheduledFor: new Date(Date.now() + altValidSeconds * 1000).toISOString()
+          },
         },
         trigger: {
           type: 'timeInterval',
-          seconds: seconds,
+          seconds: altValidSeconds,
         },
       });
       console.log(`✅ Alternative format worked. ID: ${identifier}`);

@@ -2,31 +2,32 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    FlatList,
-    Modal,
-    RefreshControl,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Dimensions,
+  FlatList,
+  Modal,
+  RefreshControl,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import SmartInput from './components/SmartInput';
 import { speakText as voiceSpeakText } from './components/VoiceInput';
 import {
-    addNotificationResponseReceivedListener,
-    cancelAllScheduledNotifications,
-    cancelReminder,
-    getAllScheduledNotifications,
-    getNotificationStats,
-    handleNotificationResponse,
-    initializeNotificationSystem,
-    scheduleLocalNotification,
-    testImmediateNotification
+  addNotificationResponseReceivedListener,
+  cancelAllReminders,
+  cancelAllScheduledNotifications,
+  cancelReminder,
+  getNotificationStats,
+  handleNotificationResponse,
+  initializeNotificationSystem,
+  scheduleLocalNotification,
+  scheduleSimpleNotification,
+  scheduleWithFallback,
+  testImmediateNotification
 } from './services/notifications';
 
 const { width } = Dimensions.get('window');
@@ -76,10 +77,25 @@ export default function App() {
     await loadCompletedReminders();
     await updateNotificationStats();
     
+    // Check if running in Expo Go and warn user about timing issues
+    await checkExpoGoLimitations();
+    
     // Add notification listeners
     const responseSubscription = addNotificationResponseReceivedListener(handleNotificationResponse);
     const receivedSubscription = Notifications.addNotificationReceivedListener(notification => {
+      const receivedTime = Date.now();
       console.log(`🔔 Notification received: ${notification.request.content.title}`);
+      
+      // Check if this was an immediate notification (appeared within 5 seconds of creation)
+      const data = notification.request.content.data;
+      if (data && data.scheduledAt && data.expectedDelay) {
+        const actualDelay = (receivedTime - data.scheduledAt) / 1000;
+        const expectedDelay = data.expectedDelay;
+        
+        if (actualDelay < 10 && expectedDelay > 30) {
+          console.warn(`⚠️ Notification appeared immediately (${actualDelay.toFixed(1)}s) instead of after ${expectedDelay}s - This is expected in Expo Go`);
+        }
+      }
     });
     
     setIsLoading(false);
@@ -210,16 +226,44 @@ export default function App() {
     try {
       const { text, time } = reminderData;
       
-      console.log('🔧 Scheduling notification for:', text, 'in', time, 'seconds');
+      console.log('🔧 Enhanced scheduling for:', text, 'in', time, 'seconds');
       
-      const notificationId = await scheduleLocalNotification(
-        '⏰ Reminder', 
-        text, 
-        time
-      );
+      // Try enhanced scheduling first, then fallback if needed
+      let notificationId;
+      try {
+        notificationId = await scheduleLocalNotification(
+          '⏰ Reminder', 
+          text, 
+          time
+        );
+      } catch (error) {
+        console.log('🔄 Standard scheduling failed, trying fallback...');
+        notificationId = await scheduleWithFallback(
+          '⏰ Reminder', 
+          text, 
+          time
+        );
+      }
       
       await updateNotificationStats();
-      Alert.alert('Reminder Set!', `Notification scheduled for ${formatTimeDisplay(time)}`);
+      
+      // Check if in Expo Go for different messaging
+      try {
+        const Constants = require('expo-constants').default;
+        const isExpoGo = Constants.appOwnership === 'expo';
+        
+        if (isExpoGo) {
+          Alert.alert(
+            'Reminder Scheduled!', 
+            `⚠️ In Expo Go, this notification may appear immediately rather than in ${formatTimeDisplay(time)}. This is normal in development mode.`,
+            [{ text: 'OK', style: 'default' }]
+          );
+        } else {
+          Alert.alert('Reminder Set!', `Notification scheduled for ${formatTimeDisplay(time)}`);
+        }
+      } catch {
+        Alert.alert('Reminder Set!', `Notification scheduled for ${formatTimeDisplay(time)}`);
+      }
       
     } catch (error) {
       console.error('Error scheduling notification:', error);
@@ -334,6 +378,97 @@ export default function App() {
     }
   };
 
+  const testEnhancedNotification = async () => {
+    try {
+      console.log('🧪 Testing enhanced notification scheduling...');
+      
+      // Test both approaches
+      await scheduleLocalNotification('🎯 Enhanced Test', 'This uses multiple scheduling strategies', 10);
+      await scheduleWithFallback('🔄 Fallback Test', 'This uses setTimeout fallback for Expo Go', 15);
+      
+      Alert.alert(
+        '🧪 Enhanced Test Started', 
+        'Two test notifications scheduled:\n\n• Enhanced (10s): Multiple strategies\n• Fallback (15s): setTimeout for Expo Go\n\nCheck console for detailed logs!'
+      );
+      
+    } catch (error) {
+      console.error('❌ Enhanced test failed:', error);
+      Alert.alert('Test Failed', error.message);
+    }
+  };
+
+  const runDiagnostics = async () => {
+    try {
+      console.log('\n🔧 ===== COMPREHENSIVE DIAGNOSTICS =====');
+      
+      // 1. Check notification permissions
+      const permissions = await Notifications.getPermissionsAsync();
+      console.log('🔒 Permissions:', permissions);
+      
+      // 2. Check device capabilities
+      const Constants = require('expo-constants').default;
+      console.log('📱 Environment:', {
+        appOwnership: Constants.appOwnership,
+        isDevice: Constants.isDevice,
+        platform: Constants.platform
+      });
+      
+      // 3. Check scheduled notifications
+      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      console.log('📅 Currently scheduled:', scheduled.length);
+      
+      // 4. Test simple scheduling
+      console.log('🧪 Testing simple 5-second notification...');
+      const simpleId = await scheduleSimpleNotification('🔧 Diagnostic Test', 'Simple 5-second test', 5);
+      console.log('✅ Simple scheduling ID:', simpleId);
+      
+      // 5. Test enhanced scheduling  
+      console.log('🧪 Testing enhanced 10-second notification...');
+      const enhancedId = await scheduleLocalNotification('🎯 Enhanced Test', 'Enhanced 10-second test', 10);
+      console.log('✅ Enhanced scheduling ID:', enhancedId);
+      
+      // 6. Verify they were scheduled
+      const afterScheduled = await Notifications.getAllScheduledNotificationsAsync();
+      console.log('📅 After scheduling:', afterScheduled.length);
+      
+      Alert.alert(
+        '🔧 Diagnostics Complete',
+        `Permissions: ${permissions.status}\nEnvironment: ${Constants.appOwnership}\nScheduled Before: ${scheduled.length}\nScheduled After: ${afterScheduled.length}\n\nTwo test notifications should arrive in 5s and 10s. Check console for details!`
+      );
+      
+    } catch (error) {
+      console.error('❌ Diagnostics failed:', error);
+      Alert.alert('Diagnostics Failed', error.message);
+    }
+  };
+
+  const checkExpoGoLimitations = async () => {
+    try {
+      // Check if we're in Expo Go by looking for the characteristic warning
+      const Constants = require('expo-constants').default;
+      const isExpoGo = Constants.appOwnership === 'expo';
+      
+      if (isExpoGo) {
+        console.warn('⚠️ Running in Expo Go - notifications may appear immediately due to development environment limitations');
+        // Show one-time warning to user
+        const hasShownWarning = await AsyncStorage.getItem('expo_go_warning_shown');
+        if (!hasShownWarning) {
+          setTimeout(() => {
+            Alert.alert(
+              '⚠️ Expo Go Limitation',
+              'Notifications may appear immediately in Expo Go instead of at scheduled times. This is normal in the development environment. Timing will work correctly in a production build.',
+              [
+                { text: 'Got it', onPress: () => AsyncStorage.setItem('expo_go_warning_shown', 'true') }
+              ]
+            );
+          }, 3000); // Delay to not interfere with app startup
+        }
+      }
+    } catch (error) {
+      console.log('Could not detect Expo Go status:', error.message);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadReminders();
@@ -359,8 +494,8 @@ export default function App() {
 
   const clearAllNotifications = async () => {
     Alert.alert(
-      'Clear All Notifications',
-      'This will cancel all scheduled reminders. Are you sure?',
+      'Clear All Data',
+      'This will remove all reminders and cancel all notifications. Are you sure?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -368,11 +503,19 @@ export default function App() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Cancel all scheduled notifications
               await cancelAllScheduledNotifications();
+              // Cancel all tracked reminders
+              await cancelAllReminders();
+              // Clear local storage
+              await saveReminders([]);
+              await saveCompletedReminders([]);
+              // Update stats
               await updateNotificationStats();
-              Alert.alert('Success', 'All notifications cleared');
+              Alert.alert('Success', 'All reminders and notifications cleared');
             } catch (error) {
-              Alert.alert('Error', `Failed to clear notifications: ${error.message}`);
+              console.error('Clear all error:', error);
+              Alert.alert('Error', `Failed to clear data: ${error.message}`);
             }
           }
         }
@@ -508,6 +651,14 @@ export default function App() {
       {/* Tab Bar */}
       {renderTabBar()}
 
+      {/* Development Mode Warning */}
+      {__DEV__ && (
+        <View style={styles.devWarning}>
+          <Text style={styles.devWarningText}>⚠️ Development Mode</Text>
+          <Text style={styles.devWarningSubtext}>Notifications may appear immediately in Expo Go</Text>
+        </View>
+      )}
+
       {/* Add Reminder Form - only show on active tab */}
       {selectedTab === 'active' && (
         <View style={styles.formContainer}>
@@ -584,8 +735,14 @@ export default function App() {
         <TouchableOpacity style={styles.debugButton} onPress={testImmediateNotification}>
           <Text style={styles.debugButtonText}>Test Now</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.debugButton} onPress={() => testEnhancedNotification()}>
+          <Text style={styles.debugButtonText}>Test Enhanced</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.debugButton} onPress={runDiagnostics}>
+          <Text style={styles.debugButtonText}>Diagnostics</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.debugButton} onPress={clearAllNotifications}>
-          <Text style={styles.debugButtonText}>Clear All</Text>
+          <Text style={styles.debugButtonText}>Clear All Data</Text>
         </TouchableOpacity>
       </View>
 
@@ -693,11 +850,12 @@ const styles = StyleSheet.create({
   },
   statsText: {
     fontSize: 14,
-    color: '#666',
-    backgroundColor: '#e3f2fd',
+    color: '#007AFF',
+    backgroundColor: '#E3F2FD',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12
+    borderRadius: 12,
+    fontWeight: '500'
   },
   searchInput: {
     marginHorizontal: 20,
@@ -828,7 +986,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#34C759',
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -841,7 +999,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#ff4757',
+    backgroundColor: '#FF3B30',
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -864,13 +1022,13 @@ const styles = StyleSheet.create({
   },
   completedAtText: {
     fontSize: 11,
-    color: '#4CAF50',
+    color: '#34C759',
     fontWeight: '500'
   },
   smartBadge: {
     fontSize: 10,
     color: '#007AFF',
-    backgroundColor: '#e3f2fd',
+    backgroundColor: '#E3F2FD',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 8,
@@ -900,7 +1058,7 @@ const styles = StyleSheet.create({
     gap: 10
   },
   debugButton: {
-    backgroundColor: '#6c757d',
+    backgroundColor: '#8E8E93',
     padding: 12,
     borderRadius: 8,
     flex: 1,
@@ -910,6 +1068,27 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: '500'
+  },
+  warningBanner: {
+    backgroundColor: '#FFF3CD',
+    borderColor: '#FFE69C',
+    borderWidth: 1,
+    marginHorizontal: 20,
+    marginBottom: 10,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center'
+  },
+  warningText: {
+    color: '#856404',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2
+  },
+  warningSubtext: {
+    color: '#6C5706',
+    fontSize: 12,
+    textAlign: 'center'
   },
   modalOverlay: {
     flex: 1,
@@ -944,7 +1123,7 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   cancelButton: {
-    backgroundColor: '#6c757d'
+    backgroundColor: '#8E8E93'
   },
   cancelButtonText: {
     color: 'white',
@@ -965,7 +1144,7 @@ const styles = StyleSheet.create({
     marginBottom: 5
   },
   selectedOption: {
-    backgroundColor: '#e3f2fd'
+    backgroundColor: '#E3F2FD'
   },
   timeOptionText: {
     fontSize: 16,
@@ -982,5 +1161,26 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600'
+  },
+  devWarning: {
+    backgroundColor: '#FFF3CD',
+    borderColor: '#FFE69C',
+    borderWidth: 1,
+    marginHorizontal: 20,
+    marginBottom: 15,
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center'
+  },
+  devWarningText: {
+    color: '#856404',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 2
+  },
+  devWarningSubtext: {
+    color: '#6C5706',
+    fontSize: 11,
+    textAlign: 'center'
   }
 });

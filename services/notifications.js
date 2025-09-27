@@ -163,6 +163,15 @@ export async function scheduleLocalNotification(title, body, seconds = 5) {
   const futureTime = createFutureTime(cleanSeconds);
   const targetTime = futureTime.date;
   
+  // Check if running in Expo Go for better UX
+  let isExpoGo = false;
+  try {
+    const Constants = require('expo-constants').default;
+    isExpoGo = Constants.appOwnership === 'expo';
+  } catch (error) {
+    // Constants not available, assume not Expo Go
+  }
+  
   // Enhanced logging for debugging
   const logId = `NOTIF-${Date.now()}`;
   console.log(`\n[${logId}] ===== NOTIFICATION SCHEDULING =====`);
@@ -176,61 +185,191 @@ export async function scheduleLocalNotification(title, body, seconds = 5) {
   console.log(`🕐 Target:  ${targetTime.toLocaleString()}`);
   console.log(`� Delay:   ${cleanSeconds} seconds`);
   
-  try {
-    console.log(`[${logId}] 🚀 SCHEDULING: About to call scheduleNotificationAsync`);
-    console.log(`[${logId}] 🚀 TRIGGER: { seconds: ${cleanSeconds} }`);
+  // Try multiple scheduling strategies for better timing
+  const strategies = [
+    // Strategy 1: Date-based trigger (most accurate)
+    async () => {
+      console.log(`[${logId}] 🎯 STRATEGY 1: Date-based trigger`);
+      return await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `⏰ ${title}`,
+          body: `${body} (Date-based scheduling)`,
+          data: { logId, scheduledAt: Date.now(), expectedDelay: cleanSeconds, strategy: 'date' }
+        },
+        trigger: {
+          date: targetTime,
+        },
+      });
+    },
     
-    // Try the absolute simplest format first
+    // Strategy 2: Extended timeInterval for Expo Go
+    async () => {
+      console.log(`[${logId}] 🎯 STRATEGY 2: Extended timeInterval`);
+      const extendedSeconds = Math.max(cleanSeconds, isExpoGo ? 30 : 10);
+      return await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `⏰ ${title}`,
+          body: `${body} (Extended ${extendedSeconds}s delay)`,
+          data: { logId, scheduledAt: Date.now(), expectedDelay: extendedSeconds, strategy: 'extended' }
+        },
+        trigger: {
+          seconds: extendedSeconds,
+        },
+      });
+    },
+    
+    // Strategy 3: Standard timeInterval
+    async () => {
+      console.log(`[${logId}] 🎯 STRATEGY 3: Standard timeInterval`);
+      return await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `⏰ ${title}`,
+          body: `${body} (Standard ${cleanSeconds}s delay)`,
+          data: { logId, scheduledAt: Date.now(), expectedDelay: cleanSeconds, strategy: 'standard' }
+        },
+        trigger: {
+          seconds: cleanSeconds,
+        },
+      });
+    },
+  ];
+  
+  // Try strategies in order until one succeeds
+  for (let i = 0; i < strategies.length; i++) {
+    try {
+      const identifier = await strategies[i]();
+      console.log(`[${logId}] ✅ SUCCESS with Strategy ${i + 1}: ${identifier}`);
+      
+      // Verify scheduling
+      await verifyNotificationScheduled(logId, identifier);
+      
+      console.log(`[${logId}] ======= ENHANCED SCHEDULING SUCCESS =======\n`);
+      return identifier;
+      
+    } catch (error) {
+      console.log(`[${logId}] ❌ Strategy ${i + 1} failed:`, error.message);
+      if (i === strategies.length - 1) {
+        throw error; // Last strategy failed, throw error
+      }
+    }
+  }
+}
+
+/**
+ * Simple notification scheduling without complex strategies (for debugging)
+ */
+export async function scheduleSimpleNotification(title, body, seconds = 5) {
+  console.log(`🔧 SIMPLE: Scheduling "${title}" for ${seconds} seconds`);
+  
+  try {
+    const cleanSeconds = Math.max(1, Math.floor(seconds));
+    
     const identifier = await Notifications.scheduleNotificationAsync({
       content: {
         title: `⏰ ${title}`,
-        body: `${body} (${cleanSeconds}s delay)`,
-        data: { logId, scheduledAt: Date.now(), expectedDelay: cleanSeconds }
+        body: `${body} (Simple scheduling)`,
+        data: { simple: true, delay: cleanSeconds, time: Date.now() }
       },
-      trigger: {
-        seconds: cleanSeconds,
-      },
+      trigger: { seconds: cleanSeconds }
     });
     
-    console.log(`[${logId}] ✅ SUCCESS: Scheduled notification ID: ${identifier}`);
-    
-    // Verify scheduling
-    try {
-      const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
-      console.log(`[${logId}] 📊 VERIFY: Total scheduled notifications: ${allScheduled.length}`);
-      
-      const thisNotif = allScheduled.find(n => n.identifier === identifier);
-      if (thisNotif) {
-        console.log(`[${logId}] 🔍 FOUND: Notification is in scheduled list`);
-        console.log(`[${logId}] 🔍 TRIGGER DATA:`, JSON.stringify(thisNotif.trigger, null, 2));
-      } else {
-        console.log(`[${logId}] ⚠️ WARNING: Notification NOT found in scheduled list`);
-      }
-    } catch (verifyError) {
-      console.log(`[${logId}] ⚠️ VERIFY ERROR:`, verifyError.message);
-    }
-    
-    console.log(`[${logId}] ======= NOTIFICATION SCHEDULING END =======\n`);
+    console.log(`✅ SIMPLE: Scheduled with ID: ${identifier}`);
     return identifier;
     
   } catch (error) {
     console.error('❌ SIMPLE: Failed to schedule:', error);
-    
-    // One simple fallback attempt
-    try {
-      console.log('🔄 SIMPLE: Trying fallback...');
-      const fallbackId = await Notifications.scheduleNotificationAsync({
-        content: { title: `📱 ${title}`, body },
-        trigger: { seconds: Math.max(10, cleanSeconds) }, // Minimum 10 seconds for fallback
-      });
-      console.log(`✅ SIMPLE: Fallback worked: ${fallbackId}`);
-      return fallbackId;
-    } catch (fallbackError) {
-      console.error('❌ SIMPLE: Even fallback failed:', fallbackError);
-      throw error;
-    }
+    throw error;
   }
 }
+
+/**
+ * Alternative notification approach using setTimeout as fallback
+ */
+export async function scheduleWithFallback(title, body, seconds = 5) {
+  console.log(`🔄 FALLBACK SCHEDULER: Attempting "${title}" in ${seconds}s`);
+  
+  // Check if running in Expo Go
+  let isExpoGo = false;
+  try {
+    const Constants = require('expo-constants').default;
+    isExpoGo = Constants.appOwnership === 'expo';
+  } catch (error) {
+    // Constants not available, assume not Expo Go
+  }
+  
+  if (isExpoGo) {
+    console.log('🔄 Using setTimeout fallback for Expo Go');
+    
+    // Use setTimeout as a backup in Expo Go
+    setTimeout(async () => {
+      try {
+        console.log(`⏰ FALLBACK: Triggering notification for "${title}"`);
+        
+        // Try to schedule immediate notification
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `⏰ ${title}`,
+            body: `${body} (Fallback timing)`,
+            data: { 
+              fallback: true, 
+              originalDelay: seconds,
+              actualTime: Date.now()
+            }
+          },
+          trigger: null, // Immediate
+        });
+        
+      } catch (error) {
+        console.error('❌ Fallback notification failed:', error);
+      }
+    }, Math.max(1000, seconds * 1000)); // Convert to milliseconds
+    
+    console.log(`✅ Fallback timer set for ${seconds} seconds`);
+    return `fallback-${Date.now()}`;
+  } else {
+    // Use direct scheduling for production (avoid recursion)
+    console.log('🔄 Using direct scheduling for production build');
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `⏰ ${title}`,
+        body: `${body} (Production scheduling)`,
+        data: { 
+          production: true, 
+          expectedDelay: seconds,
+          scheduledAt: Date.now()
+        }
+      },
+      trigger: { seconds: Math.max(1, seconds) }
+    });
+  }
+}
+
+/**
+ * Verify that a notification was properly scheduled
+ */
+async function verifyNotificationScheduled(logId, identifier) {
+  try {
+    const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
+    console.log(`[${logId}] 📊 VERIFY: Total scheduled notifications: ${allScheduled.length}`);
+    
+    const thisNotif = allScheduled.find(n => n.identifier === identifier);
+    if (thisNotif) {
+      console.log(`[${logId}] 🔍 FOUND: Notification is in scheduled list`);
+      console.log(`[${logId}] 🔍 TRIGGER TYPE:`, thisNotif.trigger.type);
+      
+      if (thisNotif.trigger.type === 'date') {
+        console.log(`[${logId}] 🔍 TRIGGER DATE:`, new Date(thisNotif.trigger.date).toLocaleString());
+      } else if (thisNotif.trigger.type === 'timeInterval') {
+        console.log(`[${logId}] 🔍 TRIGGER SECONDS:`, thisNotif.trigger.seconds);
+      }
+    } else {
+      console.log(`[${logId}] ⚠️ WARNING: Notification NOT found in scheduled list`);
+    }
+  } catch (verifyError) {
+    console.log(`[${logId}] ⚠️ VERIFY ERROR:`, verifyError.message);
+  }
+}
+
 
 /**
  * Send a push notification using Expo's push service

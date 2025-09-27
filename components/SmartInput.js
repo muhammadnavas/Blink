@@ -440,13 +440,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   voiceButton: {
-    backgroundColor: '#FF6B6B',
+    backgroundColor: '#FF3B30',
   },
   suggestionsButton: {
-    backgroundColor: '#FFD93D',
+    backgroundColor: '#FF9500',
   },
   parseButton: {
-    backgroundColor: '#4ECDC4',
+    backgroundColor: '#34C759',
   },
   actionButtonText: {
     fontSize: 18,
@@ -466,7 +466,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#333',
   },
   quickPreview: {
-    backgroundColor: '#e3f2fd',
+    backgroundColor: '#E3F2FD',
     borderRadius: 8,
     padding: 12,
     marginTop: 10,
@@ -610,7 +610,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#6c757d',
+    backgroundColor: '#8E8E93',
   },
   confirmButton: {
     backgroundColor: '#007AFF',

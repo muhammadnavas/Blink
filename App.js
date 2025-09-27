@@ -2,37 +2,39 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  FlatList,
-  Modal,
-  RefreshControl,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    FlatList,
+    Modal,
+    RefreshControl,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
+import SmartInput from './components/SmartInput';
+import { speakText as voiceSpeakText } from './components/VoiceInput';
 import {
-  addNotificationResponseReceivedListener,
-  cancelAllReminders,
-  cancelAllScheduledNotifications,
-  cancelReminder,
-  createPersistentNotification,
-  getAllActiveReminders,
-  getAllScheduledNotifications,
-  getNotificationStats,
-  handleNotificationResponse,
-  initializeNotificationSystem,
-  scheduleCustomIntervalReminder,
-  scheduleDailyReminder,
-  scheduleLocalNotification,
-  scheduleWeeklyReminder,
-  testAndroidNotification,
-  testImmediateNotification
+    addNotificationResponseReceivedListener,
+    cancelAllReminders,
+    cancelAllScheduledNotifications,
+    cancelReminder,
+    createPersistentNotification,
+    getAllActiveReminders,
+    getAllScheduledNotifications,
+    getNotificationStats,
+    handleNotificationResponse,
+    initializeNotificationSystem,
+    scheduleCustomIntervalReminder,
+    scheduleDailyReminder,
+    scheduleLocalNotification,
+    scheduleWeeklyReminder,
+    testAndroidNotification,
+    testImmediateNotification
 } from './services/notifications';
 
 const { width } = Dimensions.get('window');
@@ -61,6 +63,10 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingReminder, setEditingReminder] = useState(null);
+  
+  // Smart input states
+  const [smartInputMode, setSmartInputMode] = useState(true);
+  const [lastParsedReminder, setLastParsedReminder] = useState(null);
   
   // Enhanced reminder features
   const [reminderType, setReminderType] = useState('one-time');
@@ -210,6 +216,60 @@ export default function App() {
       await AsyncStorage.setItem('completed_reminders', JSON.stringify(newCompleted));
     } catch (error) {
       console.error('Error saving completed reminders:', error);
+    }
+  };
+
+  // Handle smart parsed reminder
+  const handleSmartReminderParsed = async (parsedResult) => {
+    try {
+      console.log('🧠 Processing smart reminder:', parsedResult);
+      
+      const { reminder: smartReminder } = parsedResult;
+      setLastParsedReminder(parsedResult);
+      
+      // Convert smart reminder to app format
+      const reminderKey = `reminder_${Date.now()}`;
+      const newReminder = {
+        id: Date.now().toString(),
+        text: smartReminder.text,
+        note: smartReminder.note || '',
+        category: smartReminder.category,
+        priority: smartReminder.priority,
+        type: smartReminder.type,
+        completed: false,
+        createdAt: new Date().toISOString(),
+        reminderKey,
+        smartParsed: true,
+        confidence: smartReminder.confidence,
+        ...(smartReminder.type === 'one-time' && { time: smartReminder.time }),
+        ...(smartReminder.type === 'daily' && smartReminder.recurringDetails && { 
+          dailyTime: smartReminder.recurringDetails 
+        }),
+        ...(smartReminder.type === 'weekly' && smartReminder.recurringDetails && { 
+          weeklyTime: smartReminder.recurringDetails 
+        }),
+        ...(smartReminder.scheduledDate && { scheduledDate: smartReminder.scheduledDate.toISOString() })
+      };
+      
+      const newReminders = [...reminders, newReminder];
+      await saveReminders(newReminders);
+      
+      await scheduleReminderNotification(newReminder);
+      
+      // Provide voice feedback
+      await voiceSpeakText(`Reminder created: ${smartReminder.text}`);
+      
+      Alert.alert(
+        '✨ Smart Reminder Created!', 
+        `"${smartReminder.text}" scheduled with ${smartReminder.confidence}% confidence`,
+        [{ text: 'Great!', style: 'default' }]
+      );
+      
+      await updateNotificationStats();
+      
+    } catch (error) {
+      console.error('❌ Error creating smart reminder:', error);
+      Alert.alert('Error', `Failed to create smart reminder: ${error.message}`);
     }
   };
 
@@ -717,6 +777,21 @@ export default function App() {
           <Text style={styles.debugButtonText}>🤖 Android 1min</Text>
         </TouchableOpacity>
       </View>
+
+      <View style={styles.debugContainer}>
+        <TouchableOpacity 
+          style={styles.testButton} 
+          onPress={() => voiceSpeakText('Smart reminders are working perfectly! You can now use voice input and natural language.')}
+        >
+          <Text style={styles.debugButtonText}>🔊 Test Voice</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.testButton} 
+          onPress={() => voiceSpeakText(`You have ${reminders.length} active reminders and ${completedReminders.length} completed tasks.`)}
+        >
+          <Text style={styles.debugButtonText}>📊 Speak Stats</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 
@@ -759,6 +834,27 @@ export default function App() {
       {/* Add Reminder Form - only show on active tab */}
       {selectedTab === 'active' && (
         <View style={styles.formContainer}>
+          {/* Smart Input Toggle */}
+          <View style={styles.inputToggleContainer}>
+            <Text style={[styles.inputToggleLabel, settings.darkMode && styles.darkText]}>🧠 Smart Input</Text>
+            <Switch
+              value={smartInputMode}
+              onValueChange={setSmartInputMode}
+              trackColor={{ false: '#767577', true: '#007AFF' }}
+              thumbColor={smartInputMode ? '#ffffff' : '#f4f3f4'}
+            />
+          </View>
+          
+          {/* Smart Input Component */}
+          {smartInputMode ? (
+            <SmartInput
+              onReminderParsed={handleSmartReminderParsed}
+              onError={(error) => Alert.alert('Smart Input Error', error)}
+              darkMode={settings.darkMode}
+              placeholder="Try: 'Remind me to call mom at 7 PM'"
+            />
+          ) : (
+          <View>
           {/* Category Selector */}
           <TouchableOpacity 
             style={[styles.selectorButton, { borderColor: categories[selectedCategory].color }]}
@@ -875,6 +971,8 @@ export default function App() {
               <Text style={styles.persistentButtonText}>📌 Sticky</Text>
             </TouchableOpacity>
           </View>
+          </View>
+          )}
         </View>
       )}
 
@@ -1355,6 +1453,27 @@ const styles = StyleSheet.create({
   formContainer: {
     paddingHorizontal: 20,
     marginBottom: 10
+  },
+  inputToggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1
+  },
+  inputToggleLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
   },
   selectorButton: {
     flexDirection: 'row',

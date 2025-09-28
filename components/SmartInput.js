@@ -59,21 +59,42 @@ export default function SmartInput({
   }, [inputText]);
 
   // Handle voice input result
-  const handleVoiceResult = (voiceText) => {
-    console.log('🎤 Voice input received:', voiceText);
-    setInputText(voiceText);
+  const handleVoiceResult = async (voiceText) => {
+    console.log('🎤 Voice result received:', voiceText);
+    
+    // Enhanced voice processing for commands
+    const enhancedVoiceText = enhanceVoiceCommand(voiceText);
+    setInputText(enhancedVoiceText);
     setShowVoice(false);
     
-    // Clear any existing parse timeout to avoid race conditions
-    if (parseTimeoutRef.current) {
-      clearTimeout(parseTimeoutRef.current);
-    }
-    
-    // Parse the voice input immediately since it's intentional
-    handleSmartParse(voiceText, true);
+    // Auto-parse voice input
+    await handleSmartParse(enhancedVoiceText);
   };
 
-  // Handle smart parsing
+  // Enhance voice commands with recurring and time patterns
+  const enhanceVoiceCommand = (voiceText) => {
+    let enhanced = voiceText.toLowerCase();
+    
+    // Recurring patterns
+    enhanced = enhanced.replace(/every day/gi, 'daily');
+    enhanced = enhanced.replace(/each day/gi, 'daily');
+    enhanced = enhanced.replace(/every week/gi, 'weekly');
+    enhanced = enhanced.replace(/each week/gi, 'weekly');
+    enhanced = enhanced.replace(/every month/gi, 'monthly');
+    enhanced = enhanced.replace(/each month/gi, 'monthly');
+    enhanced = enhanced.replace(/every (\d+) days?/gi, 'every $1 days');
+    
+    // Time pattern enhancements
+    enhanced = enhanced.replace(/in the morning/gi, 'at 9 AM');
+    enhanced = enhanced.replace(/in the afternoon/gi, 'at 2 PM');
+    enhanced = enhanced.replace(/in the evening/gi, 'at 7 PM');
+    enhanced = enhanced.replace(/at night/gi, 'at 9 PM');
+    enhanced = enhanced.replace(/tomorrow/gi, 'in 1 day');
+    enhanced = enhanced.replace(/next week/gi, 'in 1 week');
+    
+    console.log('🎤 Enhanced voice command:', enhanced);
+    return enhanced;
+  };  // Handle smart parsing
   const handleSmartParse = async (text, showFeedback = true) => {
     if (!text.trim()) return;
 

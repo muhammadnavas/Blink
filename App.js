@@ -53,6 +53,12 @@ export default function App() {
   
   // Notification stats
   const [notificationStats, setNotificationStats] = useState(null);
+  
+  // Recurring reminder states
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringType, setRecurringType] = useState('daily');
+  const [customRecurringDays, setCustomRecurringDays] = useState(1);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
 
   // Simplified time options - only essential ones
   const timeOptions = [
@@ -63,6 +69,14 @@ export default function App() {
     { label: '1 hour', value: 3600 },
     { label: '2 hours', value: 7200 },
     { label: '1 day', value: 86400 }
+  ];
+
+  // Recurring reminder options
+  const recurringOptions = [
+    { label: 'Daily', value: 'daily', interval: 86400 },
+    { label: 'Weekly', value: 'weekly', interval: 604800 },
+    { label: 'Monthly', value: 'monthly', interval: 2592000 },
+    { label: 'Custom Days', value: 'custom', interval: null }
   ];
 
   useEffect(() => {
@@ -168,7 +182,12 @@ export default function App() {
         reminderKey,
         smartParsed: true,
         confidence: smartReminder.confidence,
-        timeDescription: smartReminder.timeDescription
+        timeDescription: smartReminder.timeDescription,
+        // Check if smart parsing detected recurring patterns
+        isRecurring: smartReminder.isRecurring || false,
+        recurringType: smartReminder.recurringType || null,
+        nextOccurrence: smartReminder.isRecurring ? calculateSmartNextOccurrence(smartReminder) : null,
+        recurringCount: smartReminder.isRecurring ? 0 : null
       };
       
       const newReminders = [...reminders, newReminder];
@@ -209,7 +228,13 @@ export default function App() {
       time: selectedTime,
       completed: false,
       createdAt: new Date().toISOString(),
-      reminderKey
+      reminderKey,
+      // Recurring reminder properties
+      isRecurring,
+      recurringType: isRecurring ? recurringType : null,
+      customRecurringDays: isRecurring && recurringType === 'custom' ? customRecurringDays : null,
+      nextOccurrence: isRecurring ? calculateNextOccurrence() : null,
+      recurringCount: isRecurring ? 0 : null
     };
     
     const newReminders = [...reminders, newReminder];
@@ -219,30 +244,111 @@ export default function App() {
     
     // Reset form
     setReminder('');
+    setIsRecurring(false);
+    setRecurringType('daily');
+    setCustomRecurringDays(1);
     setIsLoading(false);
+  };
+
+  const calculateNextOccurrence = () => {
+    const now = new Date();
+    const baseTime = new Date(now.getTime() + (selectedTime * 1000));
+    
+    let intervalMs;
+    switch (recurringType) {
+      case 'daily':
+        intervalMs = 86400 * 1000; // 24 hours
+        break;
+      case 'weekly':
+        intervalMs = 604800 * 1000; // 7 days
+        break;
+      case 'monthly':
+        intervalMs = 2592000 * 1000; // 30 days (approximate)
+        break;
+      case 'custom':
+        intervalMs = customRecurringDays * 86400 * 1000;
+        break;
+      default:
+        intervalMs = 86400 * 1000;
+    }
+    
+    return new Date(baseTime.getTime() + intervalMs).toISOString();
+  };
+
+  const calculateSmartNextOccurrence = (smartReminder) => {
+    const now = new Date();
+    const baseTime = new Date(now.getTime() + (smartReminder.time * 1000));
+    
+    let intervalMs;
+    switch (smartReminder.recurringType) {
+      case 'daily':
+        intervalMs = 86400 * 1000;
+        break;
+      case 'weekly':
+        intervalMs = 604800 * 1000;
+        break;
+      case 'monthly':
+        intervalMs = 2592000 * 1000;
+        break;
+      default:
+        intervalMs = 86400 * 1000;
+    }
+    
+    return new Date(baseTime.getTime() + intervalMs).toISOString();
+  };
+
+  const scheduleRecurringNotification = async (reminderData) => {
+    try {
+      const nextOccurrenceDate = new Date(reminderData.nextOccurrence);
+      const now = new Date();
+      const secondsUntilNext = Math.floor((nextOccurrenceDate.getTime() - now.getTime()) / 1000);
+      
+      if (secondsUntilNext > 0) {
+        const reminderTitle = `🔄 ${reminderData.recurringType.charAt(0).toUpperCase() + reminderData.recurringType.slice(1)} Reminder`;
+        const reminderBody = `${reminderData.text} (Repeats ${reminderData.recurringType})`;
+        
+        await scheduleLocalNotification(
+          reminderTitle,
+          reminderBody,
+          secondsUntilNext
+        );
+        
+        console.log(`🔄 Next recurring reminder scheduled for: ${nextOccurrenceDate.toLocaleString()}`);
+      }
+    } catch (error) {
+      console.error('Error scheduling recurring notification:', error);
+    }
   };
 
   const scheduleReminderNotification = async (reminderData) => {
     try {
-      const { text, time } = reminderData;
+      const { text, time, isRecurring, recurringType } = reminderData;
       
-      console.log('🔧 Enhanced scheduling for:', text, 'in', time, 'seconds');
+      console.log('🔧 Enhanced scheduling for:', text, 'in', time, 'seconds', isRecurring ? `(Recurring: ${recurringType})` : '');
       
       // Try enhanced scheduling first, then fallback if needed
       let notificationId;
+      const reminderTitle = isRecurring ? `🔄 ${recurringType.charAt(0).toUpperCase() + recurringType.slice(1)} Reminder` : '⏰ Reminder';
+      const reminderBody = isRecurring ? `${text} (Repeats ${recurringType})` : text;
+      
       try {
         notificationId = await scheduleLocalNotification(
-          '⏰ Reminder', 
-          text, 
+          reminderTitle, 
+          reminderBody, 
           time
         );
       } catch (error) {
         console.log('🔄 Standard scheduling failed, trying fallback...');
         notificationId = await scheduleWithFallback(
-          '⏰ Reminder', 
-          text, 
+          reminderTitle, 
+          reminderBody, 
           time
         );
+      }
+      
+      // If recurring, schedule the next occurrence
+      if (isRecurring && reminderData.nextOccurrence) {
+        await scheduleRecurringNotification(reminderData);
       }
       
       await updateNotificationStats();
@@ -610,8 +716,23 @@ export default function App() {
                 Completed: {new Date(item.completedAt).toLocaleDateString()}
               </Text>
             )}
-            {item.smartParsed && (
-              <Text style={styles.smartBadge}>🧠 Smart</Text>
+            <View style={styles.badgeContainer}>
+              {item.smartParsed && (
+                <Text style={styles.smartBadge}>🧠 Smart</Text>
+              )}
+              {item.isRecurring && (
+                <Text style={styles.recurringBadge}>
+                  🔄 {item.recurringType === 'custom' 
+                    ? `Every ${item.customRecurringDays} days` 
+                    : item.recurringType.charAt(0).toUpperCase() + item.recurringType.slice(1)
+                  }
+                </Text>
+              )}
+            </View>
+            {item.isRecurring && item.nextOccurrence && !isCompleted && (
+              <Text style={styles.nextOccurrenceText}>
+                Next: {new Date(item.nextOccurrence).toLocaleDateString()} at {new Date(item.nextOccurrence).toLocaleTimeString()}
+              </Text>
             )}
           </View>
         </View>
@@ -688,6 +809,29 @@ export default function App() {
             </Text>
             <Text style={styles.arrow}>▼</Text>
           </TouchableOpacity>
+
+          {/* Recurring Reminder Toggle */}
+          <TouchableOpacity 
+            style={[styles.recurringToggle, isRecurring && styles.recurringToggleActive]}
+            onPress={() => setIsRecurring(!isRecurring)}
+          >
+            <Text style={[styles.recurringToggleText, isRecurring && styles.recurringToggleTextActive]}>
+              🔄 {isRecurring ? 'Recurring Enabled' : 'Make Recurring'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Recurring Options */}
+          {isRecurring && (
+            <TouchableOpacity 
+              style={styles.recurringSelector}
+              onPress={() => setShowRecurringModal(true)}
+            >
+              <Text style={styles.recurringSelectorText}>
+                🔄 {recurringType === 'custom' ? `Every ${customRecurringDays} days` : recurringType.charAt(0).toUpperCase() + recurringType.slice(1)}
+              </Text>
+              <Text style={styles.arrow}>▼</Text>
+            </TouchableOpacity>
+          )}
           
           <TouchableOpacity style={styles.addButton} onPress={addReminder}>
             <Text style={styles.addButtonText}>Add Reminder</Text>
@@ -814,6 +958,50 @@ export default function App() {
               onPress={() => setShowTimeModal(false)}
             >
               <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Recurring Modal */}
+      <Modal visible={showRecurringModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>🔄 Recurring Options</Text>
+            {recurringOptions.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[styles.timeOption, recurringType === option.value && styles.selectedOption]}
+                onPress={() => {
+                  setRecurringType(option.value);
+                  if (option.value !== 'custom') {
+                    setShowRecurringModal(false);
+                  }
+                }}
+              >
+                <Text style={styles.timeOptionText}>{option.label}</Text>
+              </TouchableOpacity>
+            ))}
+            
+            {/* Custom Days Input */}
+            {recurringType === 'custom' && (
+              <View style={styles.customDaysContainer}>
+                <Text style={styles.customDaysLabel}>Every how many days?</Text>
+                <TextInput
+                  style={styles.customDaysInput}
+                  placeholder="Number of days"
+                  value={customRecurringDays.toString()}
+                  onChangeText={(text) => setCustomRecurringDays(Math.max(1, parseInt(text) || 1))}
+                  keyboardType="numeric"
+                />
+              </View>
+            )}
+            
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setShowRecurringModal(false)}
+            >
+              <Text style={styles.closeButtonText}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1182,5 +1370,84 @@ const styles = StyleSheet.create({
     color: '#6C5706',
     fontSize: 11,
     textAlign: 'center'
+  },
+  // Recurring reminder styles
+  recurringToggle: {
+    backgroundColor: '#f0f0f0',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd'
+  },
+  recurringToggleActive: {
+    backgroundColor: '#E3F2FD',
+    borderColor: '#007AFF'
+  },
+  recurringToggleText: {
+    fontSize: 16,
+    color: '#666'
+  },
+  recurringToggleTextActive: {
+    color: '#007AFF',
+    fontWeight: '600'
+  },
+  recurringSelector: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#007AFF'
+  },
+  recurringSelectorText: {
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '600'
+  },
+  customDaysContainer: {
+    backgroundColor: '#f8f9fa',
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 10
+  },
+  customDaysLabel: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 8,
+    fontWeight: '600'
+  },
+  customDaysInput: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    fontSize: 16
+  },
+  badgeContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 5
+  },
+  recurringBadge: {
+    backgroundColor: '#4CAF50',
+    color: 'white',
+    fontSize: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    fontWeight: '600'
+  },
+  nextOccurrenceText: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontStyle: 'italic',
+    marginTop: 4
   }
 });

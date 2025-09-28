@@ -842,20 +842,36 @@ export default function App() {
   };
 
   const renderTabBar = () => (
-    <View style={styles.tabBar}>
+    <View style={[styles.tabBar, dynamicStyles.border]}>
       <TouchableOpacity 
-        style={[styles.tabButton, selectedTab === 'active' && styles.activeTab]}
+        style={[
+          styles.tabButton, 
+          selectedTab === 'active' && styles.activeTab,
+          dynamicStyles.border
+        ]}
         onPress={() => setSelectedTab('active')}
       >
-        <Text style={[styles.tabText, selectedTab === 'active' && styles.activeTabText]}>
+        <Text style={[
+          styles.tabText, 
+          selectedTab === 'active' && styles.activeTabText,
+          selectedTab !== 'active' && dynamicStyles.text
+        ]}>
           Active ({reminders.length})
         </Text>
       </TouchableOpacity>
       <TouchableOpacity 
-        style={[styles.tabButton, selectedTab === 'completed' && styles.activeTab]}
+        style={[
+          styles.tabButton, 
+          selectedTab === 'completed' && styles.activeTab,
+          dynamicStyles.border
+        ]}
         onPress={() => setSelectedTab('completed')}
       >
-        <Text style={[styles.tabText, selectedTab === 'completed' && styles.activeTabText]}>
+        <Text style={[
+          styles.tabText, 
+          selectedTab === 'completed' && styles.activeTabText,
+          selectedTab !== 'completed' && dynamicStyles.text
+        ]}>
           Completed ({completedReminders.length})
         </Text>
       </TouchableOpacity>
@@ -1106,8 +1122,8 @@ export default function App() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No active reminders</Text>
-              <Text style={styles.emptySubtext}>Add a reminder to get started!</Text>
+              <Text style={[styles.emptyText, dynamicStyles.text]}>No active reminders</Text>
+              <Text style={[styles.emptySubtext, { color: darkMode ? '#cccccc' : '#666666' }]}>Add a reminder to get started!</Text>
             </View>
           }
         />
@@ -1123,8 +1139,8 @@ export default function App() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No completed reminders</Text>
-              <Text style={styles.emptySubtext}>Complete some reminders to see them here!</Text>
+              <Text style={[styles.emptyText, dynamicStyles.text]}>No completed reminders</Text>
+              <Text style={[styles.emptySubtext, { color: darkMode ? '#cccccc' : '#666666' }]}>Complete some reminders to see them here!</Text>
             </View>
           }
         />
@@ -1849,5 +1865,14 @@ const styles = StyleSheet.create({
     color: '#888',
     textTransform: 'uppercase',
     fontWeight: '500'
+  },
+  snoozeBadge: {
+    backgroundColor: '#FF9800',
+    color: 'white',
+    fontSize: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    fontWeight: '600'
   }
 });

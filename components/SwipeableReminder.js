@@ -1,12 +1,10 @@
-import React from 'react';
 import {
-  Animated,
-  Dimensions,
-  PanResponder,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Animated,
+    Dimensions,
+    PanResponder,
+    StyleSheet,
+    Text,
+    View
 } from 'react-native';
 
 const { width: screenWidth } = Dimensions.get('window');

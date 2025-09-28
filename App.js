@@ -209,9 +209,11 @@ export default function App() {
       switch (suggestion.action) {
         case 'setTime':
           setSelectedTime(suggestion.value);
+          Alert.alert('✅ Applied', `Time set to ${formatTimeDisplay(suggestion.value)}`);
           break;
         case 'enableRecurring':
           setIsRecurring(true);
+          Alert.alert('✅ Applied', 'Recurring reminders enabled');
           break;
         case 'useSimilar':
           setReminder(suggestion.value.text);
@@ -220,13 +222,42 @@ export default function App() {
             setIsRecurring(true);
             setRecurringType(suggestion.value.recurringType);
           }
+          Alert.alert('✅ Applied', `Similar reminder template applied`);
           break;
         default:
           console.log('Unknown suggestion action:', suggestion.action);
       }
       setShowSuggestions(false);
+      
+      // Refresh suggestions after applying one
+      await loadSmartSuggestions();
     } catch (error) {
       console.error('Error applying suggestion:', error);
+      Alert.alert('Error', 'Failed to apply suggestion');
+    }
+  };
+
+  const getSuggestionIcon = (type) => {
+    switch (type) {
+      case 'time': return '⏰';
+      case 'category': return '📂';
+      case 'recurring': return '🔄';
+      case 'words': return '💬';
+      case 'timeOfDay': return '🌅';
+      case 'similar': return '🔍';
+      default: return '💡';
+    }
+  };
+
+  const getSuggestionColor = (type) => {
+    switch (type) {
+      case 'time': return '#007AFF';
+      case 'category': return '#FF9500';
+      case 'recurring': return '#4CAF50';
+      case 'words': return '#9C27B0';
+      case 'timeOfDay': return '#FF6B6B';
+      case 'similar': return '#00BCD4';
+      default: return '#9C27B0';
     }
   };
 
@@ -390,36 +421,78 @@ export default function App() {
   const snoozeReminder = async (reminderId, snoozeMinutes = 10) => {
     try {
       const reminder = reminders.find(r => r.id === reminderId);
-      if (!reminder) return;
+      if (!reminder) {
+        Alert.alert('Error', 'Reminder not found');
+        return;
+      }
 
+      // Show snooze options to user
+      Alert.alert(
+        '😴 Snooze Reminder',
+        `"${reminder.text}"`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: '5 min', onPress: () => performSnooze(reminder, 5) },
+          { text: '10 min', onPress: () => performSnooze(reminder, 10) },
+          { text: '30 min', onPress: () => performSnooze(reminder, 30) },
+          { text: '1 hour', onPress: () => performSnooze(reminder, 60) }
+        ]
+      );
+      
+    } catch (error) {
+      console.error('Error showing snooze options:', error);
+      Alert.alert('Error', 'Failed to show snooze options');
+    }
+  };
+
+  const performSnooze = async (reminder, snoozeMinutes) => {
+    try {
       // Cancel current notification
       if (reminder.reminderKey) {
         await cancelReminder(reminder.reminderKey);
       }
 
-      // Create snoozed reminder
+      // Create snoozed reminder with better tracking
       const snoozedReminder = {
         ...reminder,
         time: snoozeMinutes * 60, // Convert to seconds
         snoozed: true,
         snoozeCount: (reminder.snoozeCount || 0) + 1,
         originalTime: reminder.originalTime || reminder.time,
-        reminderKey: `reminder_${Date.now()}_snoozed`
+        reminderKey: `reminder_${Date.now()}_snoozed`,
+        snoozeHistory: [
+          ...(reminder.snoozeHistory || []),
+          {
+            snoozeTime: new Date().toISOString(),
+            snoozeDuration: snoozeMinutes
+          }
+        ]
       };
 
       // Update reminders array
       const newReminders = reminders.map(r => 
-        r.id === reminderId ? snoozedReminder : r
+        r.id === reminder.id ? snoozedReminder : r
       );
       await saveReminders(newReminders);
 
-      // Schedule snoozed notification
-      await scheduleReminderNotification(snoozedReminder);
+      // Schedule snoozed notification with proper title
+      const snoozeTitle = `😴 Snoozed Reminder (#${snoozedReminder.snoozeCount})`;
+      const snoozeNotificationData = {
+        ...snoozedReminder,
+        title: snoozeTitle
+      };
+      
+      await scheduleReminderNotification(snoozeNotificationData);
+      await updateNotificationStats();
 
-      Alert.alert('Reminder Snoozed', `Reminder will appear again in ${snoozeMinutes} minutes`);
+      // Show success feedback
+      Alert.alert(
+        '✅ Snoozed!', 
+        `"${reminder.text}" will remind you again in ${snoozeMinutes} ${snoozeMinutes === 1 ? 'minute' : 'minutes'}`
+      );
       
     } catch (error) {
-      console.error('Error snoozing reminder:', error);
+      console.error('Error performing snooze:', error);
       Alert.alert('Error', 'Failed to snooze reminder');
     }
   };
@@ -735,24 +808,34 @@ export default function App() {
 
   // Helper function to format time display
   const formatTimeDisplay = (timeValue) => {
+    // Handle invalid input
+    if (!timeValue || typeof timeValue !== 'number' || timeValue <= 0) {
+      return '5 minutes'; // Default fallback
+    }
+
+    // Check for standard time options first
     const standardOption = timeOptions.find(t => t.value === timeValue);
     if (standardOption) {
       return standardOption.label;
     }
     
-    // Format custom time
-    if (typeof timeValue === 'number' && timeValue > 0) {
-      const hours = Math.floor(timeValue / 3600);
-      const minutes = Math.floor((timeValue % 3600) / 60);
-      const seconds = timeValue % 60;
-      
-      if (hours > 0) {
+    // Format custom time with better accuracy
+    const days = Math.floor(timeValue / 86400);
+    const hours = Math.floor((timeValue % 86400) / 3600);
+    const minutes = Math.floor((timeValue % 3600) / 60);
+    const seconds = timeValue % 60;
+    
+    if (days > 0) {
+      return days === 1 ? '1 day' : `${days} days`;
+    } else if (hours > 0) {
+      if (minutes > 0) {
         return `${hours}h ${minutes}m`;
-      } else if (minutes > 0) {
-        return `${minutes}m`;
-      } else {
-        return `${seconds}s`;
       }
+      return hours === 1 ? '1 hour' : `${hours} hours`;
+    } else if (minutes > 0) {
+      return minutes === 1 ? '1 minute' : `${minutes} minutes`;
+    } else {
+      return seconds === 1 ? '1 second' : `${seconds} seconds`;
     }
     
     return '5 minutes';
@@ -814,7 +897,7 @@ export default function App() {
         >
         <View style={styles.reminderContent}>
           <View style={styles.reminderHeader}>
-            <Text style={styles.reminderText}>
+            <Text style={[styles.reminderText, dynamicStyles.text]}>
               {item.text}
             </Text>
             <View style={styles.headerActions}>
@@ -836,11 +919,11 @@ export default function App() {
           </View>
           
           <View style={styles.reminderFooter}>
-            <Text style={styles.timeText}>
+            <Text style={[styles.timeText, { color: darkMode ? '#cccccc' : '#666' }]}>
               {item.timeDescription || formatTimeDisplay(item.time)}
             </Text>
             {isCompleted && item.completedAt && (
-              <Text style={styles.completedAtText}>
+              <Text style={[styles.completedAtText, { color: darkMode ? '#999999' : '#888888' }]}>
                 Completed: {new Date(item.completedAt).toLocaleDateString()}
               </Text>
             )}
@@ -856,9 +939,14 @@ export default function App() {
                   }
                 </Text>
               )}
+              {item.snoozed && (
+                <Text style={[styles.snoozeBadge, { backgroundColor: darkMode ? '#FF7043' : '#FF9800', color: 'white' }]}>
+                  😴 Snoozed ({item.snoozeCount}x)
+                </Text>
+              )}
             </View>
             {item.isRecurring && item.nextOccurrence && !isCompleted && (
-              <Text style={styles.nextOccurrenceText}>
+              <Text style={[styles.nextOccurrenceText, { color: darkMode ? '#66BB6A' : '#4CAF50' }]}>
                 Next: {new Date(item.nextOccurrence).toLocaleDateString()} at {new Date(item.nextOccurrence).toLocaleTimeString()}
               </Text>
             )}
@@ -869,16 +957,16 @@ export default function App() {
     );
   };
 
+  // Get dynamic styles based on theme
+  const dynamicStyles = getDynamicStyles(darkMode);
+
   if (isLoading) {
     return (
-      <View style={[styles.container, styles.centerContent]}>
-        <Text style={styles.loadingText}>Loading Blink Reminder...</Text>
+      <View style={[styles.container, styles.centerContent, dynamicStyles.container]}>
+        <Text style={[styles.loadingText, dynamicStyles.text]}>Loading Blink Reminder...</Text>
       </View>
     );
   }
-
-  // Get dynamic styles based on theme
-  const dynamicStyles = getDynamicStyles(darkMode);
 
   return (
     <View style={[styles.container, dynamicStyles.container]}>
@@ -886,18 +974,21 @@ export default function App() {
       
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.title}>Blink Reminder</Text>
+          <Text style={[styles.title, dynamicStyles.text]}>Blink Reminder</Text>
           {notificationStats && (
-            <Text style={styles.statsText}>
+            <Text style={[styles.statsText, dynamicStyles.text]}>
               {notificationStats.activeReminders} active
             </Text>
           )}
         </View>
         <TouchableOpacity 
-          style={styles.themeToggle}
+          style={[
+            styles.themeToggle,
+            { backgroundColor: darkMode ? '#404040' : '#f0f0f0' }
+          ]}
           onPress={toggleDarkMode}
         >
-          <Text style={styles.themeToggleText}>
+          <Text style={[styles.themeToggleText, { color: darkMode ? '#ffffff' : '#333333' }]}>
             {darkMode ? '☀️' : '🌙'}
           </Text>
         </TouchableOpacity>
@@ -937,28 +1028,38 @@ export default function App() {
           
           {/* Manual Input */}
           <TextInput
-            style={styles.input}
+            style={[styles.input, dynamicStyles.inputBackground, dynamicStyles.text, dynamicStyles.border]}
             placeholder="Enter reminder manually"
+            placeholderTextColor={darkMode ? '#888888' : '#666666'}
             value={reminder}
             onChangeText={setReminder}
           />
           
           <TouchableOpacity 
-            style={styles.timeSelector}
+            style={[styles.timeSelector, dynamicStyles.inputBackground, dynamicStyles.border]}
             onPress={() => setShowTimeModal(true)}
           >
-            <Text style={styles.timeSelectorText}>
+            <Text style={[styles.timeSelectorText, dynamicStyles.text]}>
               ⏰ {formatTimeDisplay(selectedTime)}
             </Text>
-            <Text style={styles.arrow}>▼</Text>
+            <Text style={[styles.arrow, dynamicStyles.text]}>▼</Text>
           </TouchableOpacity>
 
           {/* Recurring Reminder Toggle */}
           <TouchableOpacity 
-            style={[styles.recurringToggle, isRecurring && styles.recurringToggleActive]}
+            style={[
+              styles.recurringToggle, 
+              isRecurring && styles.recurringToggleActive,
+              !isRecurring && dynamicStyles.inputBackground,
+              !isRecurring && dynamicStyles.border
+            ]}
             onPress={() => setIsRecurring(!isRecurring)}
           >
-            <Text style={[styles.recurringToggleText, isRecurring && styles.recurringToggleTextActive]}>
+            <Text style={[
+              styles.recurringToggleText, 
+              isRecurring && styles.recurringToggleTextActive,
+              !isRecurring && dynamicStyles.text
+            ]}>
               🔄 {isRecurring ? 'Recurring Enabled' : 'Make Recurring'}
             </Text>
           </TouchableOpacity>
@@ -975,8 +1076,6 @@ export default function App() {
               <Text style={styles.arrow}>▼</Text>
             </TouchableOpacity>
           )}
-          
-                      )}
 
           {/* Smart Suggestions Button */}
           {suggestions.length > 0 && (
@@ -1050,12 +1149,13 @@ export default function App() {
       {/* Edit Reminder Modal */}
       <Modal visible={showEditModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Reminder</Text>
+          <View style={[styles.modalContent, dynamicStyles.modalBackground]}>
+            <Text style={[styles.modalTitle, dynamicStyles.text]}>Edit Reminder</Text>
             
             <TextInput
-              style={styles.input}
+              style={[styles.input, dynamicStyles.inputBackground, dynamicStyles.text, dynamicStyles.border]}
               placeholder="Enter your reminder"
+              placeholderTextColor={darkMode ? '#888888' : '#666666'}
               value={reminder}
               onChangeText={setReminder}
             />
@@ -1096,18 +1196,22 @@ export default function App() {
       {/* Time Modal */}
       <Modal visible={showTimeModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Time</Text>
+          <View style={[styles.modalContent, dynamicStyles.modalBackground]}>
+            <Text style={[styles.modalTitle, dynamicStyles.text]}>Select Time</Text>
             {timeOptions.map((option) => (
               <TouchableOpacity
                 key={option.value}
-                style={[styles.timeOption, selectedTime === option.value && styles.selectedOption]}
+                style={[
+                  styles.timeOption, 
+                  selectedTime === option.value && styles.selectedOption,
+                  dynamicStyles.border
+                ]}
                 onPress={() => {
                   setSelectedTime(option.value);
                   setShowTimeModal(false);
                 }}
               >
-                <Text style={styles.timeOptionText}>{option.label}</Text>
+                <Text style={[styles.timeOptionText, dynamicStyles.text]}>{option.label}</Text>
               </TouchableOpacity>
             ))}
             <TouchableOpacity 
@@ -1123,12 +1227,16 @@ export default function App() {
       {/* Recurring Modal */}
       <Modal visible={showRecurringModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>🔄 Recurring Options</Text>
+          <View style={[styles.modalContent, dynamicStyles.modalBackground]}>
+            <Text style={[styles.modalTitle, dynamicStyles.text]}>🔄 Recurring Options</Text>
             {recurringOptions.map((option) => (
               <TouchableOpacity
                 key={option.value}
-                style={[styles.timeOption, recurringType === option.value && styles.selectedOption]}
+                style={[
+                  styles.timeOption, 
+                  recurringType === option.value && styles.selectedOption,
+                  dynamicStyles.border
+                ]}
                 onPress={() => {
                   setRecurringType(option.value);
                   if (option.value !== 'custom') {
@@ -1136,17 +1244,18 @@ export default function App() {
                   }
                 }}
               >
-                <Text style={styles.timeOptionText}>{option.label}</Text>
+                <Text style={[styles.timeOptionText, dynamicStyles.text]}>{option.label}</Text>
               </TouchableOpacity>
             ))}
             
             {/* Custom Days Input */}
             {recurringType === 'custom' && (
-              <View style={styles.customDaysContainer}>
-                <Text style={styles.customDaysLabel}>Every how many days?</Text>
+              <View style={[styles.customDaysContainer, dynamicStyles.inputBackground, dynamicStyles.border]}>
+                <Text style={[styles.customDaysLabel, dynamicStyles.text]}>Every how many days?</Text>
                 <TextInput
-                  style={styles.customDaysInput}
+                  style={[styles.customDaysInput, dynamicStyles.inputBackground, dynamicStyles.text, dynamicStyles.border]}
                   placeholder="Number of days"
+                  placeholderTextColor={darkMode ? '#888888' : '#666666'}
                   value={customRecurringDays.toString()}
                   onChangeText={(text) => setCustomRecurringDays(Math.max(1, parseInt(text) || 1))}
                   keyboardType="numeric"
@@ -1159,6 +1268,52 @@ export default function App() {
               onPress={() => setShowRecurringModal(false)}
             >
               <Text style={styles.closeButtonText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Smart Suggestions Modal */}
+      <Modal visible={showSuggestions} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, dynamicStyles.modalBackground]}>
+            <Text style={[styles.modalTitle, dynamicStyles.text]}>💡 Smart Suggestions</Text>
+            
+            {suggestions.map((suggestion, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.suggestionItem, 
+                  dynamicStyles.border,
+                  dynamicStyles.cardBackground,
+                  { borderLeftWidth: 4, borderLeftColor: getSuggestionColor(suggestion.type) }
+                ]}
+                onPress={() => applySuggestion(suggestion)}
+              >
+                <View style={styles.suggestionContent}>
+                  <Text style={[styles.suggestionTitle, dynamicStyles.text]}>
+                    {getSuggestionIcon(suggestion.type)} {suggestion.title}
+                  </Text>
+                  <Text style={[styles.suggestionDescription, { color: darkMode ? '#cccccc' : '#666666' }]}>
+                    {suggestion.description}
+                  </Text>
+                  <View style={styles.suggestionFooter}>
+                    <Text style={[styles.suggestionConfidence, { color: getSuggestionColor(suggestion.type) }]}>
+                      {Math.round(suggestion.confidence)}% confidence
+                    </Text>
+                    <Text style={[styles.suggestionType, { color: darkMode ? '#999999' : '#888888' }]}>
+                      {suggestion.type}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
+            
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setShowSuggestions(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1643,5 +1798,56 @@ const styles = StyleSheet.create({
   },
   themeToggleText: {
     fontSize: 20
+  },
+  // Smart suggestions styles
+  suggestionsButton: {
+    backgroundColor: '#9C27B0',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 10,
+    alignItems: 'center'
+  },
+  suggestionsButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600'
+  },
+  suggestionItem: {
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0'
+  },
+  suggestionContent: {
+    flex: 1
+  },
+  suggestionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4
+  },
+  suggestionDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4
+  },
+  suggestionConfidence: {
+    fontSize: 12,
+    color: '#9C27B0',
+    fontWeight: '600'
+  },
+  suggestionFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8
+  },
+  suggestionType: {
+    fontSize: 11,
+    color: '#888',
+    textTransform: 'uppercase',
+    fontWeight: '500'
   }
 });

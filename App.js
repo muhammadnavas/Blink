@@ -15,6 +15,7 @@ import {
   View
 } from 'react-native';
 import SmartInput from './components/SmartInput';
+import SwipeableReminder from './components/SwipeableReminder';
 import { speakText as voiceSpeakText } from './components/VoiceInput';
 import {
   addNotificationResponseReceivedListener,
@@ -29,6 +30,7 @@ import {
   scheduleWithFallback,
   testImmediateNotification
 } from './services/notifications';
+import smartSuggestions from './services/smartSuggestions';
 
 const { width } = Dimensions.get('window');
 
@@ -59,6 +61,13 @@ export default function App() {
   const [recurringType, setRecurringType] = useState('daily');
   const [customRecurringDays, setCustomRecurringDays] = useState(1);
   const [showRecurringModal, setShowRecurringModal] = useState(false);
+  
+  // Dark mode state
+  const [darkMode, setDarkMode] = useState(false);
+  
+  // Smart suggestions state
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Simplified time options - only essential ones
   const timeOptions = [
@@ -89,7 +98,9 @@ export default function App() {
     await initializeNotificationSystem();
     await loadReminders();
     await loadCompletedReminders();
+    await loadThemePreference();
     await updateNotificationStats();
+    await loadSmartSuggestions();
     
     // Check if running in Expo Go and warn user about timing issues
     await checkExpoGoLimitations();
@@ -160,6 +171,62 @@ export default function App() {
       await AsyncStorage.setItem('completed_reminders', JSON.stringify(newCompleted));
     } catch (error) {
       console.error('Error saving completed reminders:', error);
+    }
+  };
+
+  const loadThemePreference = async () => {
+    try {
+      const savedTheme = await AsyncStorage.getItem('theme_preference');
+      if (savedTheme !== null) {
+        setDarkMode(JSON.parse(savedTheme));
+      }
+    } catch (error) {
+      console.error('Error loading theme preference:', error);
+    }
+  };
+
+  const toggleDarkMode = async () => {
+    try {
+      const newDarkMode = !darkMode;
+      setDarkMode(newDarkMode);
+      await AsyncStorage.setItem('theme_preference', JSON.stringify(newDarkMode));
+    } catch (error) {
+      console.error('Error saving theme preference:', error);
+    }
+  };
+
+  const loadSmartSuggestions = async () => {
+    try {
+      const { suggestions: newSuggestions } = await smartSuggestions.analyzeUserPatterns();
+      setSuggestions(newSuggestions);
+    } catch (error) {
+      console.error('Error loading smart suggestions:', error);
+    }
+  };
+
+  const applySuggestion = async (suggestion) => {
+    try {
+      switch (suggestion.action) {
+        case 'setTime':
+          setSelectedTime(suggestion.value);
+          break;
+        case 'enableRecurring':
+          setIsRecurring(true);
+          break;
+        case 'useSimilar':
+          setReminder(suggestion.value.text);
+          setSelectedTime(suggestion.value.time);
+          if (suggestion.value.isRecurring) {
+            setIsRecurring(true);
+            setRecurringType(suggestion.value.recurringType);
+          }
+          break;
+        default:
+          console.log('Unknown suggestion action:', suggestion.action);
+      }
+      setShowSuggestions(false);
+    } catch (error) {
+      console.error('Error applying suggestion:', error);
     }
   };
 
@@ -317,6 +384,43 @@ export default function App() {
       }
     } catch (error) {
       console.error('Error scheduling recurring notification:', error);
+    }
+  };
+
+  const snoozeReminder = async (reminderId, snoozeMinutes = 10) => {
+    try {
+      const reminder = reminders.find(r => r.id === reminderId);
+      if (!reminder) return;
+
+      // Cancel current notification
+      if (reminder.reminderKey) {
+        await cancelReminder(reminder.reminderKey);
+      }
+
+      // Create snoozed reminder
+      const snoozedReminder = {
+        ...reminder,
+        time: snoozeMinutes * 60, // Convert to seconds
+        snoozed: true,
+        snoozeCount: (reminder.snoozeCount || 0) + 1,
+        originalTime: reminder.originalTime || reminder.time,
+        reminderKey: `reminder_${Date.now()}_snoozed`
+      };
+
+      // Update reminders array
+      const newReminders = reminders.map(r => 
+        r.id === reminderId ? snoozedReminder : r
+      );
+      await saveReminders(newReminders);
+
+      // Schedule snoozed notification
+      await scheduleReminderNotification(snoozedReminder);
+
+      Alert.alert('Reminder Snoozed', `Reminder will appear again in ${snoozeMinutes} minutes`);
+      
+    } catch (error) {
+      console.error('Error snoozing reminder:', error);
+      Alert.alert('Error', 'Failed to snooze reminder');
     }
   };
 
@@ -678,12 +782,36 @@ export default function App() {
   const renderReminder = ({ item }) => {
     const isCompleted = item.completed;
     
+    // Define swipe actions
+    const leftAction = !isCompleted ? {
+      icon: '✓',
+      text: 'Complete',
+      color: '#4CAF50'
+    } : null;
+    
+    const rightAction = !isCompleted ? {
+      icon: '😴',
+      text: 'Snooze',
+      color: '#FF9800'
+    } : {
+      icon: '🗑️',
+      text: 'Delete',
+      color: '#f44336'
+    };
+    
     return (
-      <TouchableOpacity 
-        style={[styles.reminderItem, { opacity: isCompleted ? 0.7 : 1 }]}
-        onPress={() => isCompleted ? null : editReminder(item)}
-        onLongPress={() => deleteReminder(item.id, isCompleted)}
+      <SwipeableReminder
+        leftAction={leftAction}
+        rightAction={rightAction}
+        onSwipeLeft={() => !isCompleted ? completeReminder(item.id) : null}
+        onSwipeRight={() => !isCompleted ? snoozeReminder(item.id, 10) : deleteReminder(item.id, isCompleted)}
+        darkMode={darkMode}
       >
+        <TouchableOpacity 
+          style={[styles.reminderItem, dynamicStyles.cardBackground, { opacity: isCompleted ? 0.7 : 1 }]}
+          onPress={() => isCompleted ? null : editReminder(item)}
+          onLongPress={() => deleteReminder(item.id, isCompleted)}
+        >
         <View style={styles.reminderContent}>
           <View style={styles.reminderHeader}>
             <Text style={styles.reminderText}>
@@ -737,6 +865,7 @@ export default function App() {
           </View>
         </View>
       </TouchableOpacity>
+      </SwipeableReminder>
     );
   };
 
@@ -748,23 +877,37 @@ export default function App() {
     );
   }
 
+  // Get dynamic styles based on theme
+  const dynamicStyles = getDynamicStyles(darkMode);
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+    <View style={[styles.container, dynamicStyles.container]}>
+      <StatusBar barStyle={darkMode ? "light-content" : "dark-content"} />
       
       <View style={styles.header}>
-        <Text style={styles.title}>Blink Reminder</Text>
-        {notificationStats && (
-          <Text style={styles.statsText}>
-            {notificationStats.activeReminders} active
+        <View style={styles.headerLeft}>
+          <Text style={styles.title}>Blink Reminder</Text>
+          {notificationStats && (
+            <Text style={styles.statsText}>
+              {notificationStats.activeReminders} active
+            </Text>
+          )}
+        </View>
+        <TouchableOpacity 
+          style={styles.themeToggle}
+          onPress={toggleDarkMode}
+        >
+          <Text style={styles.themeToggleText}>
+            {darkMode ? '☀️' : '🌙'}
           </Text>
-        )}
+        </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
       <TextInput
-        style={styles.searchInput}
+        style={[styles.searchInput, dynamicStyles.inputBackground, dynamicStyles.text]}
         placeholder="Search reminders..."
+        placeholderTextColor={darkMode ? '#888888' : '#666666'}
         value={searchQuery}
         onChangeText={setSearchQuery}
       />
@@ -830,6 +973,20 @@ export default function App() {
                 🔄 {recurringType === 'custom' ? `Every ${customRecurringDays} days` : recurringType.charAt(0).toUpperCase() + recurringType.slice(1)}
               </Text>
               <Text style={styles.arrow}>▼</Text>
+            </TouchableOpacity>
+          )}
+          
+                      )}
+
+          {/* Smart Suggestions Button */}
+          {suggestions.length > 0 && (
+            <TouchableOpacity 
+              style={styles.suggestionsButton}
+              onPress={() => setShowSuggestions(true)}
+            >
+              <Text style={styles.suggestionsButtonText}>
+                💡 Smart Suggestions ({suggestions.length})
+              </Text>
             </TouchableOpacity>
           )}
           
@@ -1010,6 +1167,28 @@ export default function App() {
   );
 }
 
+// Dynamic styles based on theme
+const getDynamicStyles = (darkMode) => ({
+  container: {
+    backgroundColor: darkMode ? '#1a1a1a' : '#f8f9fa'
+  },
+  text: {
+    color: darkMode ? '#ffffff' : '#333333'
+  },
+  inputBackground: {
+    backgroundColor: darkMode ? '#2d2d2d' : '#ffffff'
+  },
+  cardBackground: {
+    backgroundColor: darkMode ? '#2d2d2d' : '#ffffff'
+  },
+  border: {
+    borderColor: darkMode ? '#404040' : '#e0e0e0'
+  },
+  modalBackground: {
+    backgroundColor: darkMode ? '#2d2d2d' : '#ffffff'
+  }
+});
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1030,6 +1209,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 50,
     paddingBottom: 10
+  },
+  headerLeft: {
+    flex: 1
   },
   title: { 
     fontSize: 24, 
@@ -1449,5 +1631,17 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     fontStyle: 'italic',
     marginTop: 4
+  },
+  // Theme toggle styles
+  themeToggle: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+    minWidth: 40,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  themeToggleText: {
+    fontSize: 20
   }
 });

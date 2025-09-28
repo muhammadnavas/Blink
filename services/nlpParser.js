@@ -47,6 +47,7 @@ const REMINDER_PATTERNS = {
     daily: /daily|every day|each day/i,
     weekly: /weekly|every week|each week/i,
     monthly: /monthly|every month|each month/i,
+    custom: /every (\d+) days?/i,
     weekdays: {
       monday: /monday|mon/i,
       tuesday: /tuesday|tue/i,
@@ -136,6 +137,11 @@ export function parseNaturalLanguage(input) {
     if (recurringResult.found) {
       result.reminder.type = recurringResult.type;
       result.reminder.recurringDetails = recurringResult.details;
+      result.reminder.isRecurring = recurringResult.isRecurring;
+      result.reminder.recurringType = recurringResult.recurringType;
+      if (recurringResult.customRecurringDays) {
+        result.reminder.customRecurringDays = recurringResult.customRecurringDays;
+      }
       result.parseDetails.recurringDetected = true;
       result.reminder.confidence += 15;
     }
@@ -337,8 +343,10 @@ function detectRecurring(input) {
     return {
       found: true,
       type: 'daily',
-      details: { hour: 9, minute: 0 }, // Default time
-      confidence: 85
+      details: { hour: 9, minute: 0 },
+      confidence: 85,
+      isRecurring: true,
+      recurringType: 'daily'
     };
   }
   
@@ -356,7 +364,9 @@ function detectRecurring(input) {
           found: true,
           type: 'weekly',
           details: { weekday: weekdayMap[day], hour: 9, minute: 0 },
-          confidence: 90
+          confidence: 90,
+          isRecurring: true,
+          recurringType: 'weekly'
         };
       }
     }
@@ -365,7 +375,36 @@ function detectRecurring(input) {
       found: true,
       type: 'weekly',
       details: { weekday: 2, hour: 9, minute: 0 }, // Default to Monday
-      confidence: 70
+      confidence: 70,
+      isRecurring: true,
+      recurringType: 'weekly'
+    };
+  }
+  
+  // Check for monthly patterns
+  if (REMINDER_PATTERNS.recurring.monthly.test(input)) {
+    return {
+      found: true,
+      type: 'monthly',
+      details: { day: 1, hour: 9, minute: 0 }, // Default to 1st of month
+      confidence: 85,
+      isRecurring: true,
+      recurringType: 'monthly'
+    };
+  }
+  
+  // Check for custom day patterns (e.g., "every 3 days")
+  const customMatch = input.match(REMINDER_PATTERNS.recurring.custom);
+  if (customMatch) {
+    const days = parseInt(customMatch[1]);
+    return {
+      found: true,
+      type: 'custom',
+      details: { days, hour: 9, minute: 0 },
+      confidence: 90,
+      isRecurring: true,
+      recurringType: 'custom',
+      customRecurringDays: days
     };
   }
   

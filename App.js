@@ -16,11 +16,14 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import BirthdayManager from './components/BirthdayManager';
+import CalendarView from './components/CalendarView';
 import FinancialDashboard from './components/FinancialDashboard';
 import QuickExpenseTracker from './components/QuickExpenseTracker';
 import SmartInput from './components/SmartInput';
 import SwipeableReminder from './components/SwipeableReminder';
 import { speakText as voiceSpeakText } from './components/VoiceInput';
+import calendarBackgroundService from './services/calendarBackgroundService';
 import {
     addNotificationResponseReceivedListener,
     cancelAllScheduledNotifications,
@@ -69,6 +72,9 @@ export default function App() {
   const [showCustomTimeModal, setShowCustomTimeModal] = useState(false);
   const [showFinancialModal, setShowFinancialModal] = useState(false);
   const [showQuickExpense, setShowQuickExpense] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showBirthdayManager, setShowBirthdayManager] = useState(false);
+  const [selectedBirthdayDate, setSelectedBirthdayDate] = useState(null);
   
   // Edit state
   const [editingReminder, setEditingReminder] = useState(null);
@@ -173,6 +179,9 @@ export default function App() {
       await requestNotificationPermissions();
       await initializeNotificationSystem();
       await updateNotificationStats();
+      
+      // Initialize calendar background service for yearly notifications
+      await calendarBackgroundService.initialize();
       
       // Set up notification listeners
       const responseSubscription = addNotificationResponseReceivedListener(handleNotificationResponse);
@@ -747,6 +756,21 @@ export default function App() {
           💰 Finance
         </Text>
       </TouchableOpacity>
+      <TouchableOpacity 
+        style={[
+          styles.tabButton, 
+          selectedTab === 'calendar' && styles.activeTab
+        ]}
+        onPress={() => setSelectedTab('calendar')}
+      >
+        <Text style={[
+          styles.tabText, 
+          { color: theme.textSecondary },
+          selectedTab === 'calendar' && styles.activeTabText
+        ]}>
+          📅 Calendar
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -1157,6 +1181,23 @@ export default function App() {
         />
       )}
 
+      {selectedTab === 'calendar' && (
+        <CalendarView
+          isDarkMode={settings.darkMode}
+          onDateSelect={(date) => {
+            // Handle date selection for adding reminders
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            setSelectedBirthdayDate(`${month}-${day}`);
+            setShowBirthdayManager(true);
+          }}
+          onAddBirthday={(date) => {
+            setSelectedBirthdayDate(date);
+            setShowBirthdayManager(true);
+          }}
+        />
+      )}
+
       {/* Settings Modal */}
       <Modal visible={showSettingsModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -1548,13 +1589,34 @@ export default function App() {
         />
       )}
 
-      {/* Floating Action Button for Quick Expense */}
+      {/* Birthday Manager Modal */}
+      {showBirthdayManager && (
+        <BirthdayManager
+          isDarkMode={settings.darkMode}
+          presetDate={selectedBirthdayDate}
+          onClose={() => {
+            setShowBirthdayManager(false);
+            setSelectedBirthdayDate(null);
+          }}
+        />
+      )}
+
+      {/* Floating Action Buttons */}
       {selectedTab === 'active' && (
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: theme.accent }]}
           onPress={() => setShowQuickExpense(true)}
         >
           <Ionicons name="card-outline" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+
+      {selectedTab === 'calendar' && (
+        <TouchableOpacity
+          style={[styles.fab, { backgroundColor: theme.birthday || '#FF6B9D' }]}
+          onPress={() => setShowBirthdayManager(true)}
+        >
+          <Ionicons name="gift-outline" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       )}
     </View>

@@ -16,6 +16,8 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import FinancialDashboard from './components/FinancialDashboard';
+import QuickExpenseTracker from './components/QuickExpenseTracker';
 import SmartInput from './components/SmartInput';
 import SwipeableReminder from './components/SwipeableReminder';
 import { speakText as voiceSpeakText } from './components/VoiceInput';
@@ -65,6 +67,8 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCustomTimeModal, setShowCustomTimeModal] = useState(false);
+  const [showFinancialModal, setShowFinancialModal] = useState(false);
+  const [showQuickExpense, setShowQuickExpense] = useState(false);
   
   // Edit state
   const [editingReminder, setEditingReminder] = useState(null);
@@ -728,6 +732,21 @@ export default function App() {
           Stats
         </Text>
       </TouchableOpacity>
+      <TouchableOpacity 
+        style={[
+          styles.tabButton, 
+          selectedTab === 'finance' && styles.activeTab
+        ]}
+        onPress={() => setSelectedTab('finance')}
+      >
+        <Text style={[
+          styles.tabText, 
+          { color: theme.textSecondary },
+          selectedTab === 'finance' && styles.activeTabText
+        ]}>
+          💰 Finance
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -1131,6 +1150,13 @@ export default function App() {
 
       {selectedTab === 'stats' && renderStatsView()}
 
+      {selectedTab === 'finance' && (
+        <FinancialDashboard
+          isDarkMode={settings.darkMode}
+          onClose={() => setSelectedTab('active')}
+        />
+      )}
+
       {/* Settings Modal */}
       <Modal visible={showSettingsModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -1509,6 +1535,28 @@ export default function App() {
           </View>
         </View>
       </Modal>
+
+      {/* Quick Expense Tracker Modal */}
+      {showQuickExpense && (
+        <QuickExpenseTracker
+          isDarkMode={settings.darkMode}
+          onClose={() => setShowQuickExpense(false)}
+          onExpenseAdded={() => {
+            // Could trigger a refresh of financial data or show a toast
+            console.log('Expense added successfully');
+          }}
+        />
+      )}
+
+      {/* Floating Action Button for Quick Expense */}
+      {selectedTab === 'active' && (
+        <TouchableOpacity
+          style={[styles.fab, { backgroundColor: theme.accent }]}
+          onPress={() => setShowQuickExpense(true)}
+        >
+          <Ionicons name="card-outline" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -1963,5 +2011,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 20,
     gap: 12
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   }
 });

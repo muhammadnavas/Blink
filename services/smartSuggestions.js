@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SMS from 'expo-sms';
 
 /**
  * Smart Suggestions System
  * Analyzes user patterns to provide intelligent recommendations
  * Enhanced with Financial Expense Tracking and SMS Analysis
+ * 
+ * Note: SMS reading requires a development build and is not available in Expo Go.
+ * In Expo Go, the app uses demo/stored data for demonstration purposes.
  */
 
 class SmartSuggestionsService {
@@ -110,18 +112,8 @@ class SmartSuggestionsService {
     try {
       console.log('📱 Reading SMS for expense analysis...');
       
-      // Check SMS permissions
-      const { status } = await SMS.requestPermissionsAsync();
-      if (status !== 'granted') {
-        console.log('SMS permission not granted');
-        return [];
-      }
-
-      // Read recent SMS messages (last 30 days)
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      
-      // Since SMS reading might be limited, we'll simulate parsing stored messages
+      // Note: SMS reading is not available in Expo Go
+      // We'll use stored/demo data instead
       const storedMessages = await AsyncStorage.getItem('sms_messages');
       let messages = storedMessages ? JSON.parse(storedMessages) : [];
       

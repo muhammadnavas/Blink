@@ -1,3 +1,10 @@
+/**
+ * Blink Reminder App
+ * A comprehensive reminder app with smart suggestions, financial tracking, and calendar features
+ * Version: 2.0
+ */
+
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -35,7 +42,7 @@ import {
     scheduleLocalNotification,
     testImmediateNotification
 } from './services/notifications';
-import { analyzeUserPatterns, getSuggestions } from './services/smartSuggestions';
+import smartSuggestionsService from './services/smartSuggestions';
 
 const { width } = Dimensions.get('window');
 
@@ -288,9 +295,7 @@ export default function App() {
 
   const updateSmartSuggestions = async (currentReminders = reminders) => {
     try {
-      const allReminders = [...currentReminders, ...completedReminders];
-      const patterns = await analyzeUserPatterns(allReminders);
-      const suggestions = await getSuggestions(patterns, currentReminders);
+      const { patterns, suggestions } = await smartSuggestionsService.analyzeUserPatterns();
       setSmartSuggestions(suggestions);
     } catch (error) {
       console.error('Error updating smart suggestions:', error);
@@ -940,20 +945,22 @@ export default function App() {
     </ScrollView>
   );
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: theme.primary }]}>
-        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-          Loading Blink Reminder...
-        </Text>
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.container, { backgroundColor: theme.primary }]}>
       <StatusBar barStyle={settings.darkMode ? "light-content" : "dark-content"} />
       
+      {/* Loading Screen */}
+      {isLoading && (
+        <View style={[StyleSheet.absoluteFill, styles.centerContent, { backgroundColor: theme.primary }]}>
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+            Loading Blink Reminder...
+          </Text>
+        </View>
+      )}
+      
+      {/* Main Content */}
+      {!isLoading && (
+        <>
       {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.text }]}>
@@ -1618,6 +1625,8 @@ export default function App() {
         >
           <Ionicons name="gift-outline" size={24} color="#FFFFFF" />
         </TouchableOpacity>
+      )}
+      </>
       )}
     </View>
   );

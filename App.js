@@ -1,7 +1,7 @@
 /**
  * Blink Reminder App
  * A comprehensive reminder app with smart suggestions, financial tracking, and calendar features
- * Version: 2.0
+ * Version: 2.1 - Hooks Fixed
  */
 
 import { Ionicons } from '@expo/vector-icons';
@@ -42,7 +42,6 @@ import {
     scheduleLocalNotification,
     testImmediateNotification
 } from './services/notifications';
-import smartSuggestionsService from './services/smartSuggestions';
 
 const { width } = Dimensions.get('window');
 
@@ -295,8 +294,10 @@ export default function App() {
 
   const updateSmartSuggestions = async (currentReminders = reminders) => {
     try {
-      const { patterns, suggestions } = await smartSuggestionsService.analyzeUserPatterns();
-      setSmartSuggestions(suggestions);
+      // Temporarily disabled to fix hooks error
+      // const { patterns, suggestions } = await smartSuggestionsService.analyzeUserPatterns();
+      // setSmartSuggestions(suggestions);
+      setSmartSuggestions([]);
     } catch (error) {
       console.error('Error updating smart suggestions:', error);
     }

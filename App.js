@@ -7,40 +7,40 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    FlatList,
-    Modal,
-    RefreshControl,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Dimensions,
+  FlatList,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import BirthdayManager from './components/BirthdayManager';
-import CalendarView from './components/CalendarView';
-import FinancialDashboard from './components/FinancialDashboard';
-import QuickExpenseTracker from './components/QuickExpenseTracker';
-import SmartInput from './components/SmartInput';
+// Temporarily commenting out complex components to fix hooks error
+// import BirthdayManager from './components/BirthdayManager';
+// import CalendarView from './components/CalendarView';
+// import FinancialDashboard from './components/FinancialDashboard';
+// import QuickExpenseTracker from './components/QuickExpenseTracker';
 import SwipeableReminder from './components/SwipeableReminder';
 import { speakText as voiceSpeakText } from './components/VoiceInput';
 import calendarBackgroundService from './services/calendarBackgroundService';
 import {
-    addNotificationResponseReceivedListener,
-    cancelAllScheduledNotifications,
-    cancelReminder,
-    getAllScheduledNotifications,
-    getNotificationStats,
-    handleNotificationResponse,
-    initializeNotificationSystem,
-    scheduleLocalNotification,
-    testImmediateNotification
+  addNotificationResponseReceivedListener,
+  cancelAllScheduledNotifications,
+  cancelReminder,
+  getAllScheduledNotifications,
+  getNotificationStats,
+  handleNotificationResponse,
+  initializeNotificationSystem,
+  scheduleLocalNotification,
+  testImmediateNotification
 } from './services/notifications';
 
 const { width } = Dimensions.get('window');
@@ -447,7 +447,7 @@ export default function App() {
     }
   };
 
-  const completeReminder = useCallback(async (reminderId) => {
+  const completeReminder = async (reminderId) => {
     try {
       const reminder = reminders.find(r => r.id === reminderId);
       if (!reminder) return;
@@ -487,9 +487,9 @@ export default function App() {
       console.error('Error completing reminder:', error);
       Alert.alert('Error', 'Failed to complete reminder');
     }
-  }, [reminders, completedReminders, settings.voiceFeedbackEnabled, settings.autoCleanup]);
+  };
 
-  const snoozeReminder = useCallback(async (reminderId, snoozeMinutes = 10) => {
+  const snoozeReminder = async (reminderId, snoozeMinutes = 10) => {
     try {
       const reminder = reminders.find(r => r.id === reminderId);
       if (!reminder) return;
@@ -515,9 +515,9 @@ export default function App() {
       console.error('Error snoozing reminder:', error);
       Alert.alert('Error', 'Failed to snooze reminder');
     }
-  }, [reminders, settings.voiceFeedbackEnabled]);
+  };
 
-  const deleteReminder = useCallback(async (id, isCompleted = false) => {
+  const deleteReminder = async (id, isCompleted = false) => {
     Alert.alert(
       'Delete Reminder',
       'Are you sure you want to delete this reminder?',
@@ -556,7 +556,7 @@ export default function App() {
         }
       ]
     );
-  }, [reminders, completedReminders, settings.voiceFeedbackEnabled]);
+  };
 
   const editReminder = (reminder) => {
     setEditingReminder(reminder);
@@ -660,22 +660,22 @@ export default function App() {
     }
   };
 
-  const getFilteredReminders = useCallback(() => {
+  const getFilteredReminders = () => {
     if (!searchQuery) return reminders;
     return reminders.filter(reminder =>
       reminder.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
       reminder.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (reminder.note && reminder.note.toLowerCase().includes(searchQuery.toLowerCase()))
     );
-  }, [reminders, searchQuery]);
+  };
 
-  const getFilteredCompletedReminders = useCallback(() => {
+  const getFilteredCompletedReminders = () => {
     if (!searchQuery) return completedReminders;
     return completedReminders.filter(reminder =>
       reminder.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
       reminder.category.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [completedReminders, searchQuery]);
+  };
 
   const formatTimeDisplay = (timeValue) => {
     const standardOption = timeOptions.find(t => t.value === timeValue);
@@ -1012,12 +1012,9 @@ export default function App() {
           </View>
           
           {smartInputMode ? (
-            <SmartInput
-              onReminderParsed={handleSmartReminderParsed}
-              onError={(error) => Alert.alert('Smart Input Error', error)}
-              theme={theme}
-              placeholder="Try: 'Remind me to call mom at 7 PM'"
-            />
+            <Text style={[{ color: theme.text, padding: 20, textAlign: 'center' }]}>
+              SmartInput temporarily disabled for debugging
+            </Text>
           ) : (
             <View>
               {/* Category Selector */}
@@ -1183,27 +1180,19 @@ export default function App() {
       {selectedTab === 'stats' && renderStatsView()}
 
       {selectedTab === 'finance' && (
-        <FinancialDashboard
-          isDarkMode={settings.darkMode}
-          onClose={() => setSelectedTab('active')}
-        />
+        <View style={[{ padding: 20, justifyContent: 'center', alignItems: 'center', flex: 1 }]}>
+          <Text style={[{ color: theme.text, textAlign: 'center' }]}>
+            FinancialDashboard temporarily disabled for debugging
+          </Text>
+        </View>
       )}
 
       {selectedTab === 'calendar' && (
-        <CalendarView
-          isDarkMode={settings.darkMode}
-          onDateSelect={(date) => {
-            // Handle date selection for adding reminders
-            const month = (date.getMonth() + 1).toString().padStart(2, '0');
-            const day = date.getDate().toString().padStart(2, '0');
-            setSelectedBirthdayDate(`${month}-${day}`);
-            setShowBirthdayManager(true);
-          }}
-          onAddBirthday={(date) => {
-            setSelectedBirthdayDate(date);
-            setShowBirthdayManager(true);
-          }}
-        />
+        <View style={[{ padding: 20, justifyContent: 'center', alignItems: 'center', flex: 1 }]}>
+          <Text style={[{ color: theme.text, textAlign: 'center' }]}>
+            CalendarView temporarily disabled for debugging
+          </Text>
+        </View>
       )}
 
       {/* Settings Modal */}
@@ -1585,28 +1574,39 @@ export default function App() {
         </View>
       </Modal>
 
-      {/* Quick Expense Tracker Modal */}
+      {/* Quick Expense Tracker Modal - Temporarily Disabled */}
       {showQuickExpense && (
-        <QuickExpenseTracker
-          isDarkMode={settings.darkMode}
-          onClose={() => setShowQuickExpense(false)}
-          onExpenseAdded={() => {
-            // Could trigger a refresh of financial data or show a toast
-            console.log('Expense added successfully');
-          }}
-        />
+        <Modal visible={true} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: theme.secondary }]}>
+              <Text style={[{ color: theme.text, textAlign: 'center', padding: 20 }]}>
+                QuickExpenseTracker temporarily disabled for debugging
+              </Text>
+              <TouchableOpacity onPress={() => setShowQuickExpense(false)}>
+                <Text style={[{ color: theme.accent, textAlign: 'center', padding: 10 }]}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       )}
 
-      {/* Birthday Manager Modal */}
+      {/* Birthday Manager Modal - Temporarily Disabled */}
       {showBirthdayManager && (
-        <BirthdayManager
-          isDarkMode={settings.darkMode}
-          presetDate={selectedBirthdayDate}
-          onClose={() => {
-            setShowBirthdayManager(false);
-            setSelectedBirthdayDate(null);
-          }}
-        />
+        <Modal visible={true} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: theme.secondary }]}>
+              <Text style={[{ color: theme.text, textAlign: 'center', padding: 20 }]}>
+                BirthdayManager temporarily disabled for debugging
+              </Text>
+              <TouchableOpacity onPress={() => {
+                setShowBirthdayManager(false);
+                setSelectedBirthdayDate(null);
+              }}>
+                <Text style={[{ color: theme.accent, textAlign: 'center', padding: 10 }]}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       )}
 
       {/* Floating Action Buttons */}

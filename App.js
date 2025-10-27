@@ -23,11 +23,12 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-// Temporarily commenting out complex components to fix hooks error
-// import BirthdayManager from './components/BirthdayManager';
-// import CalendarView from './components/CalendarView';
-// import FinancialDashboard from './components/FinancialDashboard';
-// import QuickExpenseTracker from './components/QuickExpenseTracker';
+// Re-enable complex components
+import BirthdayManager from './components/BirthdayManager';
+import CalendarView from './components/CalendarView';
+import FinancialDashboard from './components/FinancialDashboard';
+import QuickExpenseTracker from './components/QuickExpenseTracker';
+import SmartInput from './components/SmartInput';
 import SwipeableReminder from './components/SwipeableReminder';
 import { speakText as voiceSpeakText } from './components/VoiceInput';
 import calendarBackgroundService from './services/calendarBackgroundService';
@@ -44,6 +45,17 @@ import {
 } from './services/notifications';
 
 const { width } = Dimensions.get('window');
+
+// Responsive scale factor based on screen width to avoid overflow on small devices
+const UI_SCALE = width < 360 ? 0.82 : width < 420 ? 0.92 : 1;
+const HEADER_PADDING_TOP = Math.round(50 * UI_SCALE);
+const TITLE_FONT_SIZE = Math.round(24 * UI_SCALE);
+const LARGE_FONT_SIZE = Math.round(24 * UI_SCALE);
+const TIME_VALUE_MIN_WIDTH = Math.round(40 * UI_SCALE);
+const TIME_BUTTON_SIZE = Math.round(40 * UI_SCALE);
+const SUGGESTION_CHIP_MIN_WIDTH = Math.round(120 * UI_SCALE);
+const SUGGESTION_CHIP_MAX_WIDTH = Math.round(150 * UI_SCALE);
+const FAB_SIZE = Math.round(56 * UI_SCALE);
 
 export default function App() {
   // Core state
@@ -408,25 +420,57 @@ export default function App() {
       const priorityEmoji = priorities[priority].emoji;
       
       let notificationId;
-      
+      // Compute seconds delay robustly.
+      // reminderData.time may be a seconds offset (number) or scheduledDate may be an ISO timestamp.
+      const MIN_SECONDS = 5;
+      let secondsToTrigger = null;
+
+      if (reminderData.scheduledDate) {
+        try {
+          const target = new Date(reminderData.scheduledDate).getTime();
+          const now = Date.now();
+          const diffSec = Math.floor((target - now) / 1000);
+          secondsToTrigger = Math.max(MIN_SECONDS, diffSec);
+          console.log(`Scheduling from scheduledDate: target=${new Date(target).toLocaleString()}, seconds=${secondsToTrigger}`);
+        } catch (err) {
+          console.warn('Invalid scheduledDate on reminder, falling back to time field', err);
+        }
+      }
+
+      // If no scheduledDate, check numeric time field
+      if (secondsToTrigger === null) {
+        if (typeof reminderData.time === 'number' && !isNaN(reminderData.time)) {
+          secondsToTrigger = Math.max(MIN_SECONDS, Math.floor(reminderData.time));
+          console.log(`Scheduling from numeric time field: seconds=${secondsToTrigger}`);
+        }
+      }
+
+      // Fallback defaults for recurring/demo types
+      if (secondsToTrigger === null) {
+        if (type === 'daily' || type === 'weekly' || type === 'interval') {
+          secondsToTrigger = 60; // default 1 minute for demo
+        } else {
+          secondsToTrigger = MIN_SECONDS;
+        }
+      }
+
       switch (type) {
         case 'one-time':
           notificationId = await scheduleLocalNotification(
-            `${priorityEmoji} Reminder`, 
-            text, 
-            reminderData.time
+            `${priorityEmoji} Reminder`,
+            text,
+            secondsToTrigger
           );
           break;
-          
+
         case 'daily':
         case 'weekly':
         case 'interval':
-          // For demo purposes, schedule as one-time notifications
-          // In production, implement proper recurring logic
+          // For demo purposes, schedule as one-time notifications using computed seconds
           notificationId = await scheduleLocalNotification(
             `${priorityEmoji} ${type.charAt(0).toUpperCase() + type.slice(1)} Reminder`,
             text,
-            60 // Default to 1 minute for demo
+            secondsToTrigger
           );
           break;
       }
@@ -676,6 +720,10 @@ export default function App() {
       reminder.category.toLowerCase().includes(searchQuery.toLowerCase())
     );
   };
+
+  // Memoize filtered lists at top-level so hooks are called consistently
+  const filteredRemindersMemo = useMemo(() => getFilteredReminders(), [reminders, searchQuery]);
+  const filteredCompletedRemindersMemo = useMemo(() => getFilteredCompletedReminders(), [completedReminders, searchQuery]);
 
   const formatTimeDisplay = (timeValue) => {
     const standardOption = timeOptions.find(t => t.value === timeValue);
@@ -1012,9 +1060,13 @@ export default function App() {
           </View>
           
           {smartInputMode ? (
-            <Text style={[{ color: theme.text, padding: 20, textAlign: 'center' }]}>
-              SmartInput temporarily disabled for debugging
-            </Text>
+            <SmartInput
+              onReminderParsed={handleSmartReminderParsed}
+              onError={(err) => console.warn('SmartInput error:', err)}
+              darkMode={settings.darkMode}
+              initialValue={reminder}
+              placeholder="Try: 'Remind me to call mom at 7 PM'"
+            />
           ) : (
             <View>
               {/* Category Selector */}
@@ -1138,7 +1190,7 @@ export default function App() {
       {selectedTab === 'active' && (
         <FlatList
           style={styles.list}
-          data={useMemo(() => getFilteredReminders(), [getFilteredReminders])}
+          data={filteredRemindersMemo}
           keyExtractor={(item) => item.id}
           renderItem={renderReminder}
           showsVerticalScrollIndicator={false}
@@ -1159,7 +1211,7 @@ export default function App() {
       {selectedTab === 'completed' && (
         <FlatList
           style={styles.list}
-          data={useMemo(() => getFilteredCompletedReminders(), [getFilteredCompletedReminders])}
+          data={filteredCompletedRemindersMemo}
           keyExtractor={(item) => item.id}
           renderItem={renderReminder}
           showsVerticalScrollIndicator={false}
@@ -1180,19 +1232,27 @@ export default function App() {
       {selectedTab === 'stats' && renderStatsView()}
 
       {selectedTab === 'finance' && (
-        <View style={[{ padding: 20, justifyContent: 'center', alignItems: 'center', flex: 1 }]}>
-          <Text style={[{ color: theme.text, textAlign: 'center' }]}>
-            FinancialDashboard temporarily disabled for debugging
-          </Text>
-        </View>
+        <FinancialDashboard
+          isDarkMode={settings.darkMode}
+          onClose={() => setSelectedTab('active')}
+        />
       )}
 
       {selectedTab === 'calendar' && (
-        <View style={[{ padding: 20, justifyContent: 'center', alignItems: 'center', flex: 1 }]}>
-          <Text style={[{ color: theme.text, textAlign: 'center' }]}>
-            CalendarView temporarily disabled for debugging
-          </Text>
-        </View>
+        <CalendarView
+          isDarkMode={settings.darkMode}
+          onDateSelect={(date) => {
+            // When a date is selected, open birthday manager for that date
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            setSelectedBirthdayDate(`${month}-${day}`);
+            setShowBirthdayManager(true);
+          }}
+          onAddBirthday={(dateStr) => {
+            setSelectedBirthdayDate(dateStr);
+            setShowBirthdayManager(true);
+          }}
+        />
       )}
 
       {/* Settings Modal */}
@@ -1574,39 +1634,29 @@ export default function App() {
         </View>
       </Modal>
 
-      {/* Quick Expense Tracker Modal - Temporarily Disabled */}
+      {/* Quick Expense Tracker (modal component handles its own Modal) */}
       {showQuickExpense && (
-        <Modal visible={true} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: theme.secondary }]}>
-              <Text style={[{ color: theme.text, textAlign: 'center', padding: 20 }]}>
-                QuickExpenseTracker temporarily disabled for debugging
-              </Text>
-              <TouchableOpacity onPress={() => setShowQuickExpense(false)}>
-                <Text style={[{ color: theme.accent, textAlign: 'center', padding: 10 }]}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+        <QuickExpenseTracker
+          isDarkMode={settings.darkMode}
+          onClose={() => setShowQuickExpense(false)}
+          onExpenseAdded={async () => {
+            setShowQuickExpense(false);
+            // refresh relevant data if needed
+            await updateNotificationStats();
+          }}
+        />
       )}
 
-      {/* Birthday Manager Modal - Temporarily Disabled */}
+      {/* Birthday Manager (component renders its own UI/modal) */}
       {showBirthdayManager && (
-        <Modal visible={true} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: theme.secondary }]}>
-              <Text style={[{ color: theme.text, textAlign: 'center', padding: 20 }]}>
-                BirthdayManager temporarily disabled for debugging
-              </Text>
-              <TouchableOpacity onPress={() => {
-                setShowBirthdayManager(false);
-                setSelectedBirthdayDate(null);
-              }}>
-                <Text style={[{ color: theme.accent, textAlign: 'center', padding: 10 }]}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+        <BirthdayManager
+          isDarkMode={settings.darkMode}
+          onClose={() => {
+            setShowBirthdayManager(false);
+            setSelectedBirthdayDate(null);
+          }}
+          presetDate={selectedBirthdayDate}
+        />
       )}
 
       {/* Floating Action Buttons */}
@@ -1650,11 +1700,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 50,
+    paddingTop: HEADER_PADDING_TOP,
     paddingBottom: 10
   },
   title: { 
-    fontSize: 24, 
+    fontSize: TITLE_FONT_SIZE, 
     fontWeight: 'bold'
   },
   settingsButton: {
@@ -1754,8 +1804,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 10,
     marginRight: 10,
-    minWidth: 120,
-    maxWidth: 150,
+    minWidth: SUGGESTION_CHIP_MIN_WIDTH,
+    maxWidth: SUGGESTION_CHIP_MAX_WIDTH,
     alignItems: 'center'
   },
   suggestionEmoji: {
@@ -1872,7 +1922,7 @@ const styles = StyleSheet.create({
     marginBottom: 10
   },
   statNumber: {
-    fontSize: 24,
+    fontSize: LARGE_FONT_SIZE,
     fontWeight: 'bold'
   },
   statLabel: {
@@ -1935,7 +1985,7 @@ const styles = StyleSheet.create({
   modalContent: {
     borderRadius: 16,
     padding: 24,
-    minWidth: width * 0.85,
+    minWidth: Math.min(width * 0.95, width * 0.98),
     maxHeight: '80%'
   },
   modalTitle: {
@@ -2021,9 +2071,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   timeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: TIME_BUTTON_SIZE,
+    height: TIME_BUTTON_SIZE,
+    borderRadius: Math.round(TIME_BUTTON_SIZE / 2),
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 15
@@ -2034,9 +2084,9 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   timeValue: {
-    fontSize: 24,
+    fontSize: LARGE_FONT_SIZE,
     fontWeight: '600',
-    minWidth: 40,
+    minWidth: TIME_VALUE_MIN_WIDTH,
     textAlign: 'center'
   },
   customTimePreview: {
@@ -2088,9 +2138,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 30,
     right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: Math.round(FAB_SIZE / 2),
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 8,
